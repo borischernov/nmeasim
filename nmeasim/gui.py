@@ -16,7 +16,7 @@ from importlib.metadata import version, PackageNotFoundError
 from pathlib import Path
 
 # Scan available serial ports
-ports = [p.device for p in sorted(list_ports.comports())]
+ports = [""] + [p.device for p in sorted(list_ports.comports())]
 
 root = tkinter.Tk()
 

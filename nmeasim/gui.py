@@ -12,23 +12,26 @@ import serial
 import sys
 import os
 from serial.tools import list_ports
-from importlib.metadata import version
+from importlib.metadata import version, PackageNotFoundError
+from pathlib import Path
 
 # Scan available serial ports
 ports = [p.device for p in sorted(list_ports.comports())]
 
 root = tkinter.Tk()
 
-root.title('nmeasim {}'.format(version("nmeasim")))
+name = "nmeasim"
 
-icon = 'icon.ico'
 try:
-    root.iconbitmap(os.path.join(sys._MEIPASS, icon))
-except:
-    try:
-        root.iconbitmap(os.path.join(os.path.dirname(__file__), icon))
-    except:
-        pass
+    with (Path(sys._MEIPASS) / "version_file").open() as fp:
+        version = fp.read().strip()
+    base_dir = Path(sys._MEIPASS) / name
+except AttributeError:
+    base_dir = Path(sys.modules[name].__file__).parent
+    version = version(name)
+
+root.title('{} {}'.format(name, version))
+root.iconbitmap(str(base_dir / "icon.ico"))
 
 textwidth = 60  # text field width
 customFont = font.Font(size=10)

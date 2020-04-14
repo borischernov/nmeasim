@@ -3,3 +3,5 @@ pip-wheel-metadata
 *.egg-info
 .vscode
 .venv
+build
+dist

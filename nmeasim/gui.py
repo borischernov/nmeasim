@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from tkinter.font import Font
 from collections import OrderedDict
 from . import models
@@ -181,6 +181,9 @@ class Interface(object):
         self._root.title('{} {}'.format(name, version_string))
         self._root.iconbitmap(str(base_dir / "icon.ico"))
 
+        with (base_dir / "LICENSE").open() as fp:
+            self._license = fp.read()
+
         # UI collection
         self._controls = OrderedDict()
         self._notebook = ttk.Notebook(self._root)
@@ -267,12 +270,19 @@ class Interface(object):
         self.__start_stop_button = tk.Button(
             self._root, text="Start", command=self.start)
 
+        self.__about_button = tk.Button(
+            self._root, text="About", command=self.about)
+
         # Pack the controls
         for tab in self._tabs.values():
             tab.grid()
         self._notebook.pack(padx=5, pady=5, side=tk.TOP, expand=1, fill='both')
         self.__start_stop_button.pack(padx=5, pady=5, side=tk.RIGHT)
+        self.__about_button.pack(padx=5, pady=5, side=tk.RIGHT)
         self.update()
+
+    def about(self):
+        messagebox.showinfo("About", self._license)
 
     def update(self):
         with self._sim.lock:

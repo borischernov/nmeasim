@@ -49,7 +49,7 @@ class _Control(object):
 
     def position(self, row):
         self._label.grid(row=row, sticky=tk.E, column=0)
-        self._widget.grid(row=row, sticky=tk.W, column=1)
+        self._widget.grid(row=row, sticky=tk.W+tk.E, column=1)
 
     def disable(self):
         self._widget.configure(state=tk.DISABLED)
@@ -68,7 +68,6 @@ class _TextBox(_Control):
         self._widget = tk.Entry(
             master=master,
             textvar=self._var,
-            width=60,
             font=Font(size=10)
         )
 
@@ -96,11 +95,12 @@ class _CheckBox(_Control):
             master=master,
             text="",
             variable=self._var,
+            anchor=tk.W,
             font=Font(size=10)
         )
 
 
-class _OptionsList(_Control):
+class _ListBox(_Control):
     __background = None
 
     def __init__(self, master, name, label, options):
@@ -109,18 +109,16 @@ class _OptionsList(_Control):
             name=name,
             tk_var_type=tk.StringVar,
             label=label)
-        self._widget = tk.OptionMenu(
+        self._widget = ttk.Combobox(
             master,
-            self._var,
-            *tuple(options))
-
-        self._widget.configure(
+            state="readonly",
+            textvariable=self._var,
+            width=40,
             font=Font(size=9),
-            relief=tk.SUNKEN,
-            borderwidth=1,
-            activebackground=self._get_background(),
-            background=self._get_background(),
-        )
+            values=tuple(options))
+
+    def enable(self):
+        self._widget.configure(state="readonly")
 
     def _get_background(self):
         template = tk.Entry(self._widget.master)
@@ -157,8 +155,8 @@ class Interface(object):
         self._controls[name] = self._tabs[tab].add(_CheckBox(
             self._tabs[tab].widget, name, label))
 
-    def _add_options_list(self, tab, name, label, options):
-        self._controls[name] = self._tabs[tab].add(_OptionsList(
+    def _add_list_box(self, tab, name, label, options):
+        self._controls[name] = self._tabs[tab].add(_ListBox(
             self._tabs[tab].widget, name, label, options))
 
     def _add_tab(self, name, label):
@@ -192,10 +190,10 @@ class Interface(object):
         self._add_tab("simulation", "Simulation")
         self._add_tab("gnss", "GNSS")
 
-        self._add_options_list(
+        self._add_list_box(
             "simulation", "comport", "COM port (optional)",
             [""] + _NmeaSerialInfo.ports())
-        self._add_options_list(
+        self._add_list_box(
             "simulation", "baudrate", "Baud rate",
             _NmeaSerialInfo.baudrates())
         self._add_check_box("simulation", "static", "Static output")
@@ -208,35 +206,35 @@ class Interface(object):
         self._add_check_box(
             "simulation", "has_rtc", "Simulate independent RTC")
 
-        self._add_options_list(
+        self._add_list_box(
             "simulation", "time_dp", "Time precision (d.p.)",
             range(4))
-        self._add_options_list(
+        self._add_list_box(
             "simulation", "horizontal_dp", "Horizontal precision (d.p.)",
             range(4)
         )
-        self._add_options_list(
+        self._add_list_box(
             "simulation", "vertical_dp", "Vertical precision (d.p.)",
             range(4)
         )
-        self._add_options_list(
+        self._add_list_box(
             "simulation", "speed_dp", "Speed precision (d.p.)",
             range(4)
         )
-        self._add_options_list(
+        self._add_list_box(
             "simulation", "angle_dp", "Angular precision (d.p.)",
             range(4)
         )
 
         self._add_text_box(
             "gnss", "output", "Formats (ordered)")
-        self._add_options_list(
+        self._add_list_box(
             "gnss", "fix", "Fix type",
             self._sim.gps.fix.nice_names())
-        self._add_options_list(
+        self._add_list_box(
             "gnss", "solution", "FAA solution mode",
             self._sim.gps.solution.nice_names())
-        self._add_options_list(
+        self._add_list_box(
             "gnss", "num_sats", "Visible satellites",
             range(self._sim.gps.max_svs + 1))
         self._add_check_box("gnss", "manual_2d", "Manual 2-D mode")
@@ -279,6 +277,7 @@ class Interface(object):
         self._notebook.pack(padx=5, pady=5, side=tk.TOP, expand=1, fill='both')
         self.__start_stop_button.pack(padx=5, pady=5, side=tk.RIGHT)
         self.__about_button.pack(padx=5, pady=5, side=tk.RIGHT)
+        self._root.resizable(False, False)
         self.update()
 
     def about(self):

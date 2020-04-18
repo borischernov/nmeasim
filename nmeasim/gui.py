@@ -1,6 +1,7 @@
 import tkinter as tk
+from tkinter import ttk
 from tkinter.font import Font
-import collections
+from collections import OrderedDict
 from . import models
 from .constants import FixType, SolutionMode
 from .simulator import Simulator
@@ -129,19 +130,39 @@ class _OptionsList(_Control):
             template.destroy()
 
 
+class _Tab(object):
+    def __init__(self, master, name, label):
+        self.widget = tk.Frame(master, padx=5, pady=5)
+        master.add(self.widget, text=label)
+        self._controls = []
+
+    def add(self, control):
+        self._controls.append(control)
+        return control
+
+    def grid(self):
+        current_row = 0
+        for control in self._controls:
+            control.position(current_row)
+            current_row += 1
+
+
 class Interface(object):
 
-    def _add_text_box(self, name, label):
-        self._controls[name] = _TextBox(
-            self.__frame, name, label)
+    def _add_text_box(self, tab, name, label):
+        self._controls[name] = self._tabs[tab].add(_TextBox(
+            self._tabs[tab].widget, name, label))
 
-    def _add_check_box(self, name, label):
-        self._controls[name] = _CheckBox(
-            self.__frame, name, label)
+    def _add_check_box(self, tab, name, label):
+        self._controls[name] = self._tabs[tab].add(_CheckBox(
+            self._tabs[tab].widget, name, label))
 
-    def _add_options_list(self, name, label, options):
-        self._controls[name] = _OptionsList(
-            self.__frame, name, label, options)
+    def _add_options_list(self, tab, name, label, options):
+        self._controls[name] = self._tabs[tab].add(_OptionsList(
+            self._tabs[tab].widget, name, label, options))
+
+    def _add_tab(self, name, label):
+        self._tabs[name] = _Tab(self._notebook, name, label)
 
     def __init__(self):
         self._sim = Simulator()
@@ -161,82 +182,95 @@ class Interface(object):
         self._root.iconbitmap(str(base_dir / "icon.ico"))
 
         # UI collection
-        self._controls = collections.OrderedDict()
-        self.__frame = tk.LabelFrame(self._root, text="Configuration", padx=5, pady=5)
+        self._controls = OrderedDict()
+        self._notebook = ttk.Notebook(self._root)
+        self._tabs = OrderedDict()
 
-        self._add_text_box(
-            "output", "Formats (ordered)")
+        self._add_tab("simulation", "Simulation")
+        self._add_tab("gnss", "GNSS")
+
         self._add_options_list(
-            "comport", "COM port (optional)",
+            "simulation", "comport", "COM port (optional)",
             [""] + _NmeaSerialInfo.ports())
         self._add_options_list(
-            "baudrate", "Baud rate",
+            "simulation", "baudrate", "Baud rate",
             _NmeaSerialInfo.baudrates())
-        self._add_check_box("static", "Static output")
-        self._add_text_box("interval", "Update interval (s)")
-        self._add_text_box("step", "Simulation step (s)")
+        self._add_check_box("simulation", "static", "Static output")
+        self._add_text_box("simulation", "interval", "Update interval (s)")
+        self._add_text_box("simulation", "step", "Simulation step (s)")
         self._add_text_box(
-            "heading_variation", "Simulated heading variation (deg)")
+            "simulation",
+            "heading_variation",
+            "Simulated heading variation (deg)")
+        self._add_check_box(
+            "simulation", "has_rtc", "Simulate independent RTC")
+
         self._add_options_list(
-            "fix", "Fix type",
+            "simulation", "time_dp", "Time precision (d.p.)",
+            range(4))
+        self._add_options_list(
+            "simulation", "horizontal_dp", "Horizontal precision (d.p.)",
+            range(4)
+        )
+        self._add_options_list(
+            "simulation", "vertical_dp", "Vertical precision (d.p.)",
+            range(4)
+        )
+        self._add_options_list(
+            "simulation", "speed_dp", "Speed precision (d.p.)",
+            range(4)
+        )
+        self._add_options_list(
+            "simulation", "angle_dp", "Angular precision (d.p.)",
+            range(4)
+        )
+
+        self._add_text_box(
+            "gnss", "output", "Formats (ordered)")
+        self._add_options_list(
+            "gnss", "fix", "Fix type",
             self._sim.gps.fix.nice_names())
         self._add_options_list(
-            "solution", "FAA solution mode",
+            "gnss", "solution", "FAA solution mode",
             self._sim.gps.solution.nice_names())
         self._add_options_list(
-            "num_sats", "Visible satellites", range(self._sim.gps.max_svs + 1))
-        self._add_check_box("manual_2d", "Manual 2-D mode")
+            "gnss", "num_sats", "Visible satellites",
+            range(self._sim.gps.max_svs + 1))
+        self._add_check_box("gnss", "manual_2d", "Manual 2-D mode")
 
         self._add_text_box(
-            "dgps_station", "DGPS Station ID")
+            "gnss", "dgps_station", "DGPS Station ID")
         self._add_text_box(
-            "last_dgps", "Time since DGPS update (s)")
+            "gnss", "last_dgps", "Time since DGPS update (s)")
 
         self._add_text_box(
-            "date_time", "Initial ISO 8601 date/time/offset")
-        self._add_options_list(
-            "time_dp", "Time precision (d.p.)", range(4))
-        self._add_check_box(
-            "has_rtc", "Simulate independent RTC")
+            "gnss", "date_time", "Initial ISO 8601 date/time/offset")
 
-        self._add_text_box("lat", "Latitude (deg)")
-        self._add_text_box("lon", "Longitude (deg)")
-        self._add_text_box("altitude", "Altitude (m)")
-        self._add_text_box("geoid_sep", "Geoid separation (m)")
-        self._add_options_list(
-            "horizontal_dp", "Horizontal precision (d.p.)",
-            range(4)
-        )
-        self._add_options_list(
-            "vertical_dp", "Vertical precision (d.p.)",
-            range(4)
-        )
+        self._add_text_box("gnss", "lat", "Latitude (deg)")
+        self._add_text_box("gnss", "lon", "Longitude (deg)")
+        self._add_text_box("gnss", "altitude", "Altitude (m)")
+        self._add_text_box("gnss", "geoid_sep", "Geoid separation (m)")
 
-        self._add_text_box("kph", "Speed (km/hr)")
-        self._add_text_box("heading", "Heading (deg True)")
-        self._add_text_box("mag_heading", "Magnetic heading (deg True)")
-        self._add_text_box("mag_var", "Magnetic variation (deg)")
-        self._add_options_list(
-            "speed_dp", "Speed precision (d.p.)",
-            range(4)
-        )
-        self._add_options_list(
-            "angle_dp", "Angular precision (d.p.)",
-            range(4)
-        )
-        self._add_text_box("hdop", "HDOP")
-        self._add_text_box("vdop", "VDOP")
-        self._add_text_box("pdop", "PDOP")
+        self._add_text_box(
+            "gnss", "kph", "Speed (km/hr)")
+        self._add_text_box(
+            "gnss", "heading", "Heading (deg True)")
+        self._add_text_box(
+            "gnss", "mag_heading", "Magnetic heading (deg True)")
+        self._add_text_box(
+            "gnss", "mag_var", "Magnetic variation (deg)")
 
-        self.__start_stop_button = tk.Button(self._root, text="Start", command=self.start)
+        self._add_text_box("gnss", "hdop", "HDOP")
+        self._add_text_box("gnss", "vdop", "VDOP")
+        self._add_text_box("gnss", "pdop", "PDOP")
+
+        self.__start_stop_button = tk.Button(
+            self._root, text="Start", command=self.start)
 
         # Pack the controls
-        current_row = 0
-        for control in self._controls.values():
-            control.position(current_row)
-            current_row += 1
-
-        self.__frame.pack(padx=5, pady=5, side=tk.TOP)
+        for tab in self._tabs.values():
+            tab.grid()
+        self._notebook.pack(padx=5, pady=5, side=tk.TOP, expand=1, fill='both')
         self.__start_stop_button.pack(padx=5, pady=5, side=tk.RIGHT)
         self.update()
 

@@ -1,5 +1,5 @@
 import collections
-import datetime
+from datetime import datetime
 import math
 import operator
 import random
@@ -12,28 +12,7 @@ from .constants import (
     FixType, SolutionMode, Validity, DimensionMode, SolutionDimension)
 
 
-class TimeZone(datetime.tzinfo):
-    ''' Generic time zone class that implements the Python tzinfo interface
-    Provides non-DST aware offsets from UTC in seconds (e.g. from time.timezone)
-    '''
-
-    def __init__(self, utcdeltasec=time.timezone):
-        self.utcdeltasec = utcdeltasec
-
-    def utcoffset(self, date_time):
-        return datetime.timedelta(seconds=self.utcdeltasec) + self.dst(date_time)
-
-    def dst(self, date_time):
-        return datetime.timedelta(0)
-
-    def tzname(self, date_time):
-        hh = int(self.utcdeltasec / 3600)
-        mm = int(self.utcdeltasec / 60 - hh * 60)
-        ss = int(self.utcdeltasec - mm * 60)
-        return 'GMT +%02d:%02d:%02d' % (hh, mm, ss)
-
-
-TZ_LOCAL = TimeZone(time.timezone)
+TZ_LOCAL = datetime.now().astimezone().tzinfo
 
 
 class Satellite(object):
@@ -447,7 +426,7 @@ class GnssReceiver(object):
         self.fix = fix
         self.manual_2d = manual_2d
         if (date_time == 0):
-            self.date_time = datetime.datetime.now(TZ_LOCAL)
+            self.date_time = datetime.now(TZ_LOCAL)
         else:
             self.date_time = date_time
         self.lat = lat

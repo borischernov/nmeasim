@@ -21,5 +21,5 @@ setup(
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License"
     ],
-    python_requires='>=3.6'
+    python_requires='>=3.7'
 )

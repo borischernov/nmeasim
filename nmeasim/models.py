@@ -32,7 +32,8 @@ class TimeZone(datetime.tzinfo):
         ss = int(self.utcdeltasec - mm * 60)
         return 'GMT +%02d:%02d:%02d' % (hh, mm, ss)
 
-tz_local = TimeZone(time.timezone)
+
+TZ_LOCAL = TimeZone(time.timezone)
 
 
 class Satellite(object):
@@ -90,21 +91,13 @@ class GnssReceiver(object):
             self.fix = FixType.INVALID_FIX
 
         # For real fixes correct for number of satellites
-        if not self.fix.uses_svs:
-            # Cannot have GNSS time without satellites
-            if self.num_sats == 0 and not self.has_rtc:
-                self.date_time = None
-
+        if self.fix.uses_svs:
             # Cannot have a fix if too few satellites
             if self.num_sats < 4:
-                if self.manual_2d and self.num_sats == 3:
-                    # 3 satellites sufficient for 2-D fix if forced
-                    self.altitude = None
-                else:
-                    self.fix = FixType.INVALID_FIX
+                self.fix = FixType.INVALID_FIX
 
         # Force blank fields if there is no fix
-        if self.fix == FixType.INVALID_FIX:
+        if not self.has_fix:
             self.__validity = Validity.INVALID_FIX
             self.__dimension = SolutionDimension.SOLUTION_NA
         else:
@@ -419,15 +412,15 @@ class GnssReceiver(object):
                  lat=0.0,
                  lon=0.0,
                  altitude=0.0,
-                 geoid_sep=0.0,
+                 geoid_sep=None,
                  kph=0.0,
                  heading=0.0,
                  mag_heading=None,
-                 mag_var=0.0,
+                 mag_var=None,
                  num_sats=12,
                  hdop=1.0,
-                 vdop=1.0,
-                 pdop=1.0,
+                 vdop=None,
+                 pdop=None,
                  last_dgps=None,
                  dgps_station=None,
                  has_rtc=False):
@@ -451,28 +444,28 @@ class GnssReceiver(object):
 
         # Record parameters
         self.solution = solution
-        self.__fix = fix
+        self.fix = fix
         self.manual_2d = manual_2d
         if (date_time == 0):
-            self.date_time = datetime.datetime.now(tz_local)
+            self.date_time = datetime.datetime.now(TZ_LOCAL)
         else:
             self.date_time = date_time
-        self._lat = lat
-        self._lon = lon
+        self.lat = lat
+        self.lon = lon
         self.horizontal_dp = horizontal_dp
         self.vertical_dp = vertical_dp
         self.speed_dp = speed_dp
         self.angle_dp = angle_dp
         self.time_dp = time_dp
-        self._altitude = altitude
-        self._geoid_sep = geoid_sep
-        self._kph = kph
-        self._heading = heading
-        self._mag_heading = mag_heading
-        self._mag_var = mag_var
-        self._hdop = hdop
-        self._vdop = vdop
-        self._pdop = pdop
+        self.altitude = altitude
+        self.geoid_sep = geoid_sep
+        self.kph = kph
+        self.heading = heading
+        self.mag_heading = mag_heading
+        self.mag_var = mag_var
+        self.hdop = hdop
+        self.vdop = vdop
+        self.pdop = pdop
         self.last_dgps = last_dgps
         self.dgps_station = dgps_station
         self.output = output
@@ -488,6 +481,10 @@ class GnssReceiver(object):
         self.num_sats = num_sats
 
         self.__recalculate()
+
+    @property
+    def max_svs(self):
+        return self.__total_sv_limit
 
     @property
     def lat(self):
@@ -578,12 +575,51 @@ class GnssReceiver(object):
         self._mag_var = new_mag_var
 
     @property
+    def dgps_station(self):
+        return self._dgps_station
+
+    @dgps_station.setter
+    def dgps_station(self, new_dgps_station):
+        self._dgps_station = new_dgps_station
+
+    @property
+    def last_dgps(self):
+        return self._last_dgps
+
+    @last_dgps.setter
+    def last_dgps(self, new_last_dgps):
+        self._last_dgps = new_last_dgps
+
+    @property
+    def has_rtc(self):
+        return self._has_rtc
+
+    @has_rtc.setter
+    def has_rtc(self, new_has_rtc):
+        self._has_rtc = new_has_rtc
+
+    @property
+    def date_time(self):
+        return self._date_time
+
+    @date_time.setter
+    def date_time(self, new_date_time):
+        self._date_time = new_date_time
+
+    @property
     def num_sats(self):
         return len(self.__visible_prns)
 
     @num_sats.setter
     def num_sats(self, value):
-        assert value <= self.__total_sv_limit
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid SV count {value}")
+
+        if value < 0 or value > self.__total_sv_limit:
+            raise ValueError(f"Invalid SV count {value}")
+
         # Randomly make the requested number visible, make the rest invisible
         # (negative elevation)
         random.shuffle(self.satellites)
@@ -601,8 +637,17 @@ class GnssReceiver(object):
     @output.setter
     def output(self, value):
         for item in value:
-            assert item in self.__gen_nmea.keys()
+            if item not in self.__gen_nmea.keys():
+                raise ValueError(f"{item} is not a valid NMEA sentence")
         self.__output = value
+
+    @property
+    def manual_2d(self):
+        return self._manual_2d
+
+    @manual_2d.setter
+    def manual_2d(self, value):
+        self._manual_2d = value
 
     @property
     def fix(self):
@@ -614,8 +659,12 @@ class GnssReceiver(object):
         self.__fix = value
 
     @property
+    def has_fix(self):
+        return self.fix != FixType.INVALID_FIX
+
+    @property
     def solution(self):
-        if self.fix == FixType.INVALID_FIX:
+        if not self.has_fix:
             return SolutionMode.INVALID_SOLUTION
         return self.__solution
 
@@ -625,6 +674,38 @@ class GnssReceiver(object):
             self.__solution = None
         assert isinstance(value, SolutionMode)
         self.__solution = value
+
+    @property
+    def horizontal_dp(self):
+        return self._horizontal_dp
+
+    @horizontal_dp.setter
+    def horizontal_dp(self, value):
+        self._horizontal_dp = value
+
+    @property
+    def vertical_dp(self):
+        return self._vertical_dp
+
+    @vertical_dp.setter
+    def vertical_dp(self, value):
+        self._vertical_dp = value
+
+    @property
+    def speed_dp(self):
+        return self._speed_dp
+
+    @speed_dp.setter
+    def speed_dp(self, value):
+        self._speed_dp = value
+
+    @property
+    def angle_dp(self):
+        return self._angle_dp
+
+    @angle_dp.setter
+    def angle_dp(self, value):
+        self._angle_dp = value
 
     def move(self, duration=1.0):
         ''' 'Move' the GNSS instance for the specified duration in seconds based on current heading and velocity.

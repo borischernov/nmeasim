@@ -65,10 +65,9 @@ class _TextBox(_Control):
             name=name,
             tk_var_type=tk.StringVar,
             label=label)
-        self._widget = tk.Entry(
+        self._widget = ttk.Entry(
             master=master,
-            textvar=self._var,
-            font=Font(size=10)
+            textvar=self._var
         )
 
     @_Control.value.getter
@@ -91,12 +90,10 @@ class _CheckBox(_Control):
             name=name,
             tk_var_type=tk.BooleanVar,
             label=label)
-        self._widget = tk.Checkbutton(
+        self._widget = ttk.Checkbutton(
             master=master,
             text="",
-            variable=self._var,
-            anchor=tk.W,
-            font=Font(size=10)
+            variable=self._var
         )
 
 
@@ -130,7 +127,7 @@ class _ListBox(_Control):
 
 class _Tab(object):
     def __init__(self, master, name, label):
-        self.widget = tk.Frame(master, padx=5, pady=5)
+        self.widget = ttk.Frame(master)
         master.add(self.widget, text=label)
         self._controls = []
 
@@ -265,10 +262,10 @@ class Interface(object):
         self._add_text_box("gnss", "vdop", "VDOP")
         self._add_text_box("gnss", "pdop", "PDOP")
 
-        self.__start_stop_button = tk.Button(
+        self.__start_stop_button = ttk.Button(
             self._root, text="Start", command=self.start)
 
-        self.__about_button = tk.Button(
+        self.__about_button = ttk.Button(
             self._root, text="About", command=self.about)
 
         # Pack the controls

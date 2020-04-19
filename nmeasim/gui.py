@@ -59,28 +59,27 @@ class _Control(object):
 
 
 class _TextBox(_Control):
-    def __init__(self, master, name, label):
+    def __init__(self, master, name, label, tk_var_type, optional):
         super().__init__(
             master=master,
             name=name,
-            tk_var_type=tk.StringVar,
+            tk_var_type=tk_var_type,
             label=label)
+        self._optional = optional
         self._widget = ttk.Entry(
             master=master,
             textvar=self._var
         )
 
-    @_Control.value.getter
+    @property
     def value(self):
-        raw = self._var.get()
-        if len(raw) == 0:
+        if self._optional and not self._widget.get():
             return None
-        else:
-            return raw.strip()
+        return self._var.get()
 
-    @_Control.value.setter
+    @value.setter
     def value(self, value):
-        self._var.set("" if value is None else str(value))
+        self._var.set("" if value is None else value)
 
 
 class _CheckBox(_Control):
@@ -98,13 +97,11 @@ class _CheckBox(_Control):
 
 
 class _ListBox(_Control):
-    __background = None
-
-    def __init__(self, master, name, label, options):
+    def __init__(self, master, name, label, options, tk_var_type):
         super().__init__(
             master=master,
             name=name,
-            tk_var_type=tk.StringVar,
+            tk_var_type=tk_var_type,
             label=label)
         self._widget = ttk.Combobox(
             master,
@@ -114,15 +111,18 @@ class _ListBox(_Control):
             font=Font(size=9),
             values=tuple(options))
 
+    @property
+    def value(self):
+        if not self._var.get():
+            return None
+        return self._var.get()
+
+    @value.setter
+    def value(self, value):
+        self._var.set("" if value is None else value)
+
     def enable(self):
         self._widget.configure(state="readonly")
-
-    def _get_background(self):
-        template = tk.Entry(self._widget.master)
-        try:
-            return template.cget('background')
-        finally:
-            template.destroy()
 
 
 class _Tab(object):
@@ -144,17 +144,20 @@ class _Tab(object):
 
 class Interface(object):
 
-    def _add_text_box(self, tab, name, label):
+    def _add_text_box(
+            self, tab, name, label, tk_var_type=tk.StringVar, optional=False):
         self._controls[name] = self._tabs[tab].add(_TextBox(
-            self._tabs[tab].widget, name, label))
+            self._tabs[tab].widget, name, label, tk_var_type, optional))
 
-    def _add_check_box(self, tab, name, label):
+    def _add_check_box(
+            self, tab, name, label):
         self._controls[name] = self._tabs[tab].add(_CheckBox(
             self._tabs[tab].widget, name, label))
 
-    def _add_list_box(self, tab, name, label, options):
+    def _add_list_box(
+            self, tab, name, label, options, tk_var_type=tk.StringVar):
         self._controls[name] = self._tabs[tab].add(_ListBox(
-            self._tabs[tab].widget, name, label, options))
+            self._tabs[tab].widget, name, label, options, tk_var_type))
 
     def _add_tab(self, name, label):
         self._tabs[name] = _Tab(self._notebook, name, label)
@@ -192,35 +195,45 @@ class Interface(object):
             [""] + _NmeaSerialInfo.ports())
         self._add_list_box(
             "simulation", "baudrate", "Baud rate",
-            _NmeaSerialInfo.baudrates())
+            _NmeaSerialInfo.baudrates(),
+            tk.IntVar)
         self._add_check_box("simulation", "static", "Static output")
-        self._add_text_box("simulation", "interval", "Update interval (s)")
-        self._add_text_box("simulation", "step", "Simulation step (s)")
+        self._add_text_box(
+            "simulation", "interval", "Update interval (s)", tk.DoubleVar)
+        self._add_text_box(
+            "simulation", "step", "Simulation step (s)", tk.DoubleVar)
         self._add_text_box(
             "simulation",
             "heading_variation",
-            "Simulated heading variation (deg)")
+            "Simulated heading variation (deg)",
+            tk.DoubleVar,
+            optional=True)
         self._add_check_box(
             "simulation", "has_rtc", "Simulate independent RTC")
 
         self._add_list_box(
             "simulation", "time_dp", "Time precision (d.p.)",
-            range(4))
+            range(4),
+            tk.IntVar)
         self._add_list_box(
             "simulation", "horizontal_dp", "Horizontal precision (d.p.)",
-            range(4)
+            range(4),
+            tk.IntVar
         )
         self._add_list_box(
             "simulation", "vertical_dp", "Vertical precision (d.p.)",
-            range(4)
+            range(4),
+            tk.IntVar
         )
         self._add_list_box(
             "simulation", "speed_dp", "Speed precision (d.p.)",
-            range(4)
+            range(4),
+            tk.IntVar
         )
         self._add_list_box(
             "simulation", "angle_dp", "Angular precision (d.p.)",
-            range(4)
+            range(4),
+            tk.IntVar
         )
 
         self._add_text_box(
@@ -233,34 +246,56 @@ class Interface(object):
             self._sim.gps.solution.nice_names())
         self._add_list_box(
             "gnss", "num_sats", "Visible satellites",
-            range(self._sim.gps.max_svs + 1))
+            range(self._sim.gps.max_svs + 1),
+            tk.IntVar)
         self._add_check_box("gnss", "manual_2d", "Manual 2-D mode")
 
         self._add_text_box(
-            "gnss", "dgps_station", "DGPS Station ID")
+            "gnss", "dgps_station", "DGPS Station ID", tk.IntVar,
+            optional=True)
         self._add_text_box(
-            "gnss", "last_dgps", "Time since DGPS update (s)")
+            "gnss", "last_dgps", "Time since DGPS update (s)", tk.DoubleVar,
+            optional=True)
 
         self._add_text_box(
-            "gnss", "date_time", "Initial ISO 8601 date/time/offset")
-
-        self._add_text_box("gnss", "lat", "Latitude (deg)")
-        self._add_text_box("gnss", "lon", "Longitude (deg)")
-        self._add_text_box("gnss", "altitude", "Altitude (m)")
-        self._add_text_box("gnss", "geoid_sep", "Geoid separation (m)")
+            "gnss", "date_time", "Initial ISO 8601 date/time/offset",
+            optional=True)
 
         self._add_text_box(
-            "gnss", "kph", "Speed (km/hr)")
+            "gnss", "lat", "Latitude (deg)", tk.DoubleVar,
+            optional=True)
         self._add_text_box(
-            "gnss", "heading", "Heading (deg True)")
+            "gnss", "lon", "Longitude (deg)", tk.DoubleVar,
+            optional=True)
         self._add_text_box(
-            "gnss", "mag_heading", "Magnetic heading (deg True)")
+            "gnss", "altitude", "Altitude (m)", tk.DoubleVar,
+            optional=True)
         self._add_text_box(
-            "gnss", "mag_var", "Magnetic variation (deg)")
+            "gnss", "geoid_sep", "Geoid separation (m)", tk.DoubleVar,
+            optional=True)
 
-        self._add_text_box("gnss", "hdop", "HDOP")
-        self._add_text_box("gnss", "vdop", "VDOP")
-        self._add_text_box("gnss", "pdop", "PDOP")
+        self._add_text_box(
+            "gnss", "kph", "Speed (km/hr)", tk.DoubleVar,
+            optional=True)
+        self._add_text_box(
+            "gnss", "heading", "Heading (deg True)", tk.DoubleVar,
+            optional=True)
+        self._add_text_box(
+            "gnss", "mag_heading", "Magnetic heading (deg True)", tk.DoubleVar,
+            optional=True)
+        self._add_text_box(
+            "gnss", "mag_var", "Magnetic variation (deg)", tk.DoubleVar,
+            optional=True)
+
+        self._add_text_box(
+            "gnss", "hdop", "HDOP", tk.DoubleVar,
+            optional=True)
+        self._add_text_box(
+            "gnss", "vdop", "VDOP", tk.DoubleVar,
+            optional=True)
+        self._add_text_box(
+            "gnss", "pdop", "PDOP", tk.DoubleVar,
+            optional=True)
 
         self.__start_stop_button = ttk.Button(
             self._root, text="Start", command=self.start)
@@ -320,7 +355,7 @@ class Interface(object):
 
             self._controls['hdop'].value = self._sim.gps.hdop
             self._controls['vdop'].value = self._sim.gps.vdop
-            self._controls['vdop'].value = self._sim.gps.vdop
+            self._controls['pdop'].value = self._sim.gps.pdop
 
     def poll(self):
         if not self._sim.is_running():
@@ -328,16 +363,18 @@ class Interface(object):
         self._root.after(200, self.poll)
         self.update()
 
-    def _convert_model_param(self, name, converter):
+    def _convert_param(self, name, converter=None):
         try:
             value = self._controls[name].value
-            if value == "":
-                value = None
-            if value is not None:
+            if value is not None and converter:
                 value = converter(value)
             setattr(self._sim.gps, name, value)
-        except (TypeError, ValueError):
+        except tk.TclError:
             pass
+
+    @staticmethod
+    def _format_converter(format_string):
+        return [f.strip() for f in format_string.split(',')]
 
     def start(self):
         if self._sim.is_running():
@@ -346,66 +383,55 @@ class Interface(object):
         self._sim = Simulator()
 
         # Go through each field and parse them for the simulator
-        try:
-            self._formats = [
-                f.strip() for f in self._controls["output"].value.split(',')]
-            self._sim.gps.output = self._formats
-        except ValueError:
-            pass
-
         self._sim.static = self._controls["static"].value
         try:
-            self._sim.interval = float(self._controls["interval"].value)
-        except (TypeError, ValueError):
+            self._sim.interval = self._controls["interval"].value
+        except tk.TclError:
             pass
 
         try:
-            self._sim.step = float(self._controls["step"].value)
-        except (TypeError, ValueError):
+            self._sim.step = self._controls["step"].value
+        except tk.TclError:
             pass
 
         try:
-            value = self._controls["heading_variation"].value
-            if value != "":
-                value = float(value)
-            self._sim.heading_variation = value
-        except (TypeError, ValueError):
+            self._sim.heading_variation = \
+                self._controls["heading_variation"].value
+        except tk.TclError:
             pass
 
-        self._sim.gps.fix = self._sim.gps.fix.from_nice_name(
-            self._controls["fix"].value)
-        self._sim.gps.solution = self._sim.gps.solution.from_nice_name(
-            self._controls["solution"].value)
-        self._sim.gps.manual_2d = self._controls["manual_2d"].value
+        self._convert_param(
+            "output", self._format_converter)
+        self._convert_param(
+            "fix", self._sim.gps.fix.from_nice_name)
+        self._convert_param(
+            "solution", self._sim.gps.solution.from_nice_name)
+        self._convert_param("manual_2d")
+        self._convert_param("num_sats")
+        self._convert_param("dgps_station")
+        self._convert_param("last_dgps")
+        self._convert_param(
+            "date_time", datetime.fromisoformat)
+        self._convert_param("has_rtc")
+        self._convert_param("time_dp")
 
-        try:
-            self._sim.gps.num_sats = int(self._controls["num_sats"].value)
-        except (TypeError, ValueError):
-            pass
+        self._convert_param("lat")
+        self._convert_param("lon")
+        self._convert_param("altitude")
+        self._convert_param("geoid_sep")
+        self._convert_param("horizontal_dp")
+        self._convert_param("vertical_dp")
 
-        self._convert_model_param("dgps_station", int)
-        self._convert_model_param("last_dgps", int)
-        self._convert_model_param("date_time", datetime.fromisoformat)
-        self._sim.gps.has_rtc = self._controls["has_rtc"].value
-        self._convert_model_param("time_dp", int)
+        self._convert_param("kph")
+        self._convert_param("heading")
+        self._convert_param("mag_heading")
+        self._convert_param("mag_var")
+        self._convert_param("speed_dp")
+        self._convert_param("angle_dp")
 
-        self._convert_model_param("lat", float)
-        self._convert_model_param("lon", float)
-        self._convert_model_param("altitude", float)
-        self._convert_model_param("geoid_sep", float)
-        self._convert_model_param("horizontal_dp", int)
-        self._convert_model_param("vertical_dp", int)
-
-        self._convert_model_param("kph", float)
-        self._convert_model_param("heading", float)
-        self._convert_model_param("mag_heading", float)
-        self._convert_model_param("mag_var", float)
-        self._convert_model_param("speed_dp", int)
-        self._convert_model_param("angle_dp", int)
-
-        self._convert_model_param("hdop", int)
-        self._convert_model_param("vdop", int)
-        self._convert_model_param("pdop", int)
+        self._convert_param("hdop")
+        self._convert_param("vdop")
+        self._convert_param("pdop")
 
         self._sim.comport.baudrate = self._controls["baudrate"].value
 
@@ -416,8 +442,9 @@ class Interface(object):
 
         # Finally start serving
         # (non-blocking as we are in an asynchronous UI thread)
-        port = self._controls['comport'].value
-        self._sim.serve(comport=None if not port else port, blocking=False)
+        self._sim.serve(
+            comport=self._controls['comport'].value,
+            blocking=False)
 
         # Poll the simulator to update the UI
         self.poll()

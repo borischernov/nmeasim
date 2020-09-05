@@ -21,8 +21,10 @@ with version_file.open('w') as fp:
 
 exe_name = '{}-{}.exe'.format(meta["Name"], meta["Version"])
 
+print('Packaging', exe_name)
+
 major, minor, patch, build = meta["Version"].split('.', 3)
-build = build.split('dev', 1)[1].split('+', 1)[0]
+build = build.split('.', 1)[0]
 
 version_string = f"{major}, {minor}, {patch}, {build}"
 with license_file.open() as fp:

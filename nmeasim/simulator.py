@@ -4,6 +4,7 @@ import serial
 import sys
 import threading
 import time
+from random import random
 
 from . import models
 
@@ -35,27 +36,30 @@ class Simulator(object):
         self.lock = threading.Lock()
 
     def __step(self, duration=1.0):
-        ''' Iterate a simulation step for the specified duration in seconds, moving the GPS instance and updating state.
+        '''
+        Iterate a simulation step for the specified duration in seconds,
+        moving the GPS instance and updating state.
         Should be called while under lock conditions.
         '''
         if self.static:
             return
 
         for gnss in self.gnss:
-            if gnss.date_time is not None:
+            if gnss.date_time is not None and (
+                    gnss.num_sats > 0 or gnss.has_rtc):
                 gnss.date_time += datetime.timedelta(seconds=duration)
 
-                perturbation = math.sin(gnss.date_time.second * math.pi / 30) / 2
-                for satellite in gnss.satellites:
-                    satellite.snr += perturbation
-                    satellite.elevation += perturbation
-                    satellite.azimuth += perturbation
+            perturbation = math.sin(gnss.date_time.second * math.pi / 30) / 2
+            for satellite in gnss.satellites:
+                satellite.snr += perturbation
+                satellite.elevation += perturbation
+                satellite.azimuth += perturbation
 
-            if self.heading_variation and gnss.heading is not None:
-                gnss.heading += (random.random() - 0.5) * \
-                    self.heading_variation
-
-            gnss.move(duration)
+            if gnss.has_fix:
+                if self.heading_variation and gnss.heading is not None:
+                    gnss.heading += (random() - 0.5) * \
+                        self.heading_variation
+                gnss.move(duration)
 
     def __action(self):
         ''' Worker thread action for the GPS simulator - outputs data to the specified serial port at 1PPS.

@@ -1,5 +1,5 @@
 import collections
-import datetime
+from datetime import datetime, timezone
 import math
 import operator
 import random
@@ -12,32 +12,12 @@ from .constants import (
     FixType, SolutionMode, Validity, DimensionMode, SolutionDimension)
 
 
-class TimeZone(datetime.tzinfo):
-    ''' Generic time zone class that implements the Python tzinfo interface
-    Provides non-DST aware offsets from UTC in seconds (e.g. from time.timezone)
-    '''
-
-    def __init__(self, utcdeltasec=time.timezone):
-        self.utcdeltasec = utcdeltasec
-
-    def utcoffset(self, date_time):
-        return datetime.timedelta(seconds=self.utcdeltasec) + self.dst(date_time)
-
-    def dst(self, date_time):
-        return datetime.timedelta(0)
-
-    def tzname(self, date_time):
-        hh = int(self.utcdeltasec / 3600)
-        mm = int(self.utcdeltasec / 60 - hh * 60)
-        ss = int(self.utcdeltasec - mm * 60)
-        return 'GMT +%02d:%02d:%02d' % (hh, mm, ss)
-
-tz_local = TimeZone(time.timezone)
+TZ_LOCAL = datetime.now().astimezone().tzinfo
 
 
 class Satellite(object):
-    '''  class for a GNSS satellite
-    '''
+    """  class for a GNSS satellite
+    """
 
     def __init__(self, prn, elevation=0, azimuth=0, snr=40):
         self.prn = prn
@@ -47,20 +27,21 @@ class Satellite(object):
 
 
 class GnssReceiver(object):
-    '''  class for a GNSS receiver
+    """  class for a GNSS receiver
     Takes in a  GNSS parameters and outputs the requested NMEA sentences.
     The  has the capability to project forward 2-D coordinates based on
     a speed and heading over a given time.
-    '''
+    """
 
     __GSA_SV_LIMIT = 12  # Maximum number of satellites per GSA message
     __GSV_SV_LIMIT = 4  # Maximum number of satellites per GSV message
     __KNOTS_PER_KPH = 1.852
 
     def __recalculate(self):
-        ''' Recalculate and fix internal state data for the GNSS instance.
-        Should be executed after external modification of parameters and prior to doing any calculations.
-        '''
+        """ Recalculate and fix internal state data for the GNSS instance.
+        Should be executed after external modification of parameters
+        and prior to doing any calculations.
+        """
         self.__visible_prns = []
         for satellite in self.satellites:
             # Fix elevation wrap around (overhead and opposite side of earth)
@@ -90,21 +71,13 @@ class GnssReceiver(object):
             self.fix = FixType.INVALID_FIX
 
         # For real fixes correct for number of satellites
-        if not self.fix.uses_svs:
-            # Cannot have GNSS time without satellites
-            if self.num_sats == 0 and not self.has_rtc:
-                self.date_time = None
-
+        if self.fix.uses_svs:
             # Cannot have a fix if too few satellites
             if self.num_sats < 4:
-                if self.manual_2d and self.num_sats == 3:
-                    # 3 satellites sufficient for 2-D fix if forced
-                    self.altitude = None
-                else:
-                    self.fix = FixType.INVALID_FIX
+                self.fix = FixType.INVALID_FIX
 
         # Force blank fields if there is no fix
-        if self.fix == FixType.INVALID_FIX:
+        if not self.has_fix:
             self.__validity = Validity.INVALID_FIX
             self.__dimension = SolutionDimension.SOLUTION_NA
         else:
@@ -118,7 +91,7 @@ class GnssReceiver(object):
 
         # Convert decimal latitude to NMEA friendly form
         if self.lat is not None:
-            self.__lat_sign = 'S' if self.lat < 0 else 'N'
+            self.__lat_sign = "S" if self.lat < 0 else "N"
             self.__lat_degrees = int(abs(self.lat))
             self.__lat_minutes = (abs(self.lat) - self.__lat_degrees) * 60
             # Take care of weird rounding
@@ -128,7 +101,7 @@ class GnssReceiver(object):
 
         # Convert decimal longitude to NMEA friendly form
         if self.lon is not None:
-            self.__lon_sign = 'W' if self.lon < 0 else 'E'
+            self.__lon_sign = "W" if self.lon < 0 else "E"
             self.__lon_degrees = int(abs(self.lon))
             self.__lon_minutes = (abs(self.lon) - self.__lon_degrees) * 60
             # Take care of weird rounding
@@ -138,12 +111,15 @@ class GnssReceiver(object):
 
         # Convert decimal magnetic variation to NMEA friendly form
         if self.mag_var is not None:
-            self.__mag_sign = 'W' if self.mag_var < 0 else 'E'
+            self.__mag_sign = "W" if self.mag_var < 0 else "E"
             self.__mag_value = abs(self.mag_var)
+        else:
+            self.__mag_sign = None
+            self.__mag_value = None
 
         # Convert metric speed to imperial form
-        if self.kph is not None:
-            self.__knots = self.kph / self.__KNOTS_PER_KPH
+        self.__knots = self.kph / self.__KNOTS_PER_KPH \
+            if self.kph is not None else None
 
         # Fix heading wrap around
         if self.heading is not None:
@@ -154,9 +130,9 @@ class GnssReceiver(object):
             self.mag_heading %= 360
 
         # Generate string specifications for various fields
-        self.__vertical_spec = '%%.%df' % self.vertical_dp
-        self.__angle_spec = '%%.%df' % self.angle_dp
-        self.__speed_spec = '%%.%df' % self.speed_dp
+        self.__vertical_spec = f"{{:.{self.vertical_dp}f}}"
+        self.__angle_spec = f"{{:.{self.angle_dp}f}}"
+        self.__speed_spec = f"{{:.{self.speed_dp}f}}"
 
         if self.time_dp > 0:
             self.__time_spec = ('%%0%d' % (self.time_dp + 3)
@@ -164,250 +140,242 @@ class GnssReceiver(object):
         else:
             self.__time_spec = '%02d'
 
-        if self.horizontal_dp > 0:
-            self.__horizontal_spec = ('%%0%d' % (
-                self.horizontal_dp + 3)) + ('.%df' % self.horizontal_dp)
-        else:
-            self.__horizontal_spec = '%02d'
+        self.__minute_spec = \
+            f"{{:0{self.horizontal_dp + 3}.{self.horizontal_dp}f}}"
+
+        self.__utc = self.date_time.astimezone(timezone.utc) \
+            if self.date_time is not None else None
 
     def __format_sentence(self, data):
-        ''' Format an NMEA sentence, pre-pending with '$' and post-pending checksum.
-        '''
+        """
+        Format an NMEA sentence,
+        pre-pending with '$' and post-pending checksum.
+        """
         sum = 0
         for ch in data:
             sum ^= ord(ch)
-        return '$' + data + '*%02X' % sum
+        return f'${data}*{sum:02X}'
 
     def __nmea_lat_lon(self):
-        ''' Generate an NMEA lat/lon string (omits final trailing ',').
-        '''
-        data = ''
+        """ Generate an NMEA lat/lon string (omits final trailing ',').
+        """
+        parts = []
         if self.lat is not None:
-            data += ('%02d' % self.__lat_degrees) + (self.__horizontal_spec %
-                                                     self.__lat_minutes) + ',' + self.__lat_sign + ','
+            parts.append(
+                f"{{:02d}}{self.__minute_spec}".format(
+                    self.__lat_degrees, self.__lat_minutes)
+            )
+            parts.append(
+                self.__lat_sign
+            )
         else:
-            data += ',,'
+            parts.extend(("", ""))
 
         if self.lon is not None:
-            data += ('%03d' % self.__lon_degrees) + (self.__horizontal_spec %
-                                                     self.__lon_minutes) + ',' + self.__lon_sign
+            parts.append(
+                f"{{:03d}}{self.__minute_spec}".format(
+                    self.__lon_degrees, self.__lon_minutes)
+            )
+            parts.append(self.__lon_sign)
         else:
-            data += ','
-        return data
+            parts.extend(("", ""))
+
+        return ",".join(parts)
 
     def __nmea_time(self):
-        ''' Generate an NMEA time string (omits final trailing ',').
-        '''
-        if self.date_time is not None:
-            ts = self.date_time.utctimetuple()
-            return ('%02d' % ts.tm_hour) + ('%02d' % ts.tm_min) + (self.__time_spec % (ts.tm_sec + self.date_time.microsecond * 1e-6))
-        else:
-            return ''
+        """ Generate an NMEA time string (omits final trailing ',').
+        """
+        if self.date_time is None:
+            return ""
+
+        result = self.__utc.strftime("%H%M%S")
+        fractional = self.__utc.strftime("%f")[:self.time_dp]
+        if not fractional:
+            return result
+        return ".".join([result, fractional])
+
+    def __fmt_opt(self, spec, value):
+        return f"{spec}".format(
+            value) if value is not None else ""
+
+    def __fmt_time(self, spec, value):
+        return value.strftime(spec) if value is not None else ""
 
     def __gga(self):
-        ''' Generate an NMEA GGA sentence.
-        '''
-        data = ''
+        """ Generate an NMEA GGA sentence.
+        """
+        parts = [
+            "GGA",
+            self.__nmea_time(),
+            self.__nmea_lat_lon(),
+            self.fix.value,
+            f"{self.num_sats:02d}",
+            self.__fmt_opt("{:.1f}", self.hdop),
+            self.__fmt_opt(self.__vertical_spec, self.altitude),
+            "M",
+            self.__fmt_opt(self.__vertical_spec, self.geoid_sep),
+            "M",
+            self.__fmt_opt(self.__time_spec, self.last_dgps),
+            self.__fmt_opt("{:04d}", self.dgps_station)
+        ]
 
-        data += self.__nmea_time() + ','
-
-        data += self.__nmea_lat_lon() + ','
-
-        data += self.fix.value + ',' + ('%02d' % self.num_sats) + ','
-
-        if self.hdop is not None:
-            data += ('%.1f' % self.hdop)
-        data += ','
-
-        if self.altitude is not None:
-            data += (self.__vertical_spec % self.altitude)
-        data += ',M,'
-
-        if self.geoid_sep is not None:
-            data += (self.__vertical_spec % self.geoid_sep)
-        data += ',M,'
-
-        if self.last_dgps is not None:
-            data += (self.__time_spec % self.last_dgps)
-        data += ','
-
-        if self.dgps_station is not None:
-            data += ('%04d' % self.dgps_station)
-
-        return [self.__format_sentence(self._prefix + 'GGA,' + data)]
+        return [self.__format_sentence(self._prefix + ",".join(parts))]
 
     def __rmc(self):
-        ''' Generate an NMEA RMC sentence.
-        '''
-        data = ''
-
-        data += self.__nmea_time() + ','
-
-        data += self.__validity.value + ','
-
-        data += self.__nmea_lat_lon() + ','
-
-        if self.kph is not None:
-            data += (self.__speed_spec % self.__knots)
-        data += ','
-
-        if self.heading is not None:
-            data += (self.__angle_spec % self.heading)
-        data += ','
-
-        if self.date_time is not None:
-            ts = self.date_time.utctimetuple()
-            data += ('%02d' % ts.tm_mday) + ('%02d' %
-                                             ts.tm_mon) + ('%02d' % (ts.tm_year % 100))
-        data += ','
-
-        if self.mag_var is not None:
-            data += (self.__angle_spec % self.__mag_value) + \
-                ',' + self.__mag_sign
-        else:
-            data += ','
+        """ Generate an NMEA RMC sentence.
+        """
+        parts = [
+            "RMC",
+            self.__nmea_time(),
+            self.__validity.value,
+            self.__nmea_lat_lon(),
+            self.__fmt_opt(self.__speed_spec, self.__knots),
+            self.__fmt_opt(self.__angle_spec, self.heading),
+            self.__fmt_time("%d%m%y", self.__utc),
+            self.__fmt_opt(self.__angle_spec, self.__mag_value),
+            self.__fmt_opt("{}", self.__mag_sign)
+        ]
 
         if self.solution is not None:
-            data += ',' + self.solution.value
+            parts.append(self.solution.value)
 
-        return [self.__format_sentence(self._prefix + 'RMC,' + data)]
+        return [self.__format_sentence(self._prefix + ",".join(parts))]
 
     def __gsa(self):
-        ''' Generate an NMEA GSA sentence.
-        '''
-        data = (DimensionMode.MANUAL_MODE.value if self.manual_2d else DimensionMode.AUTOMATIC_MODE.value) + ','
+        """ Generate an NMEA GSA sentence.
+        """
+        parts = [
+            "GSA",
+            DimensionMode.MANUAL_MODE.value
+            if self.manual_2d else DimensionMode.AUTOMATIC_MODE.value,
+            self.__dimension.value,
+        ]
 
-        data += self.__dimension.value + ','
+        entries = min(self.__GSA_SV_LIMIT, self.num_sats)
+        parts.extend(
+            [f"{p}" for p in self.__visible_prns[:entries]]
+        )
+        if entries < self.__GSA_SV_LIMIT:
+            parts.extend([""] * (self.__GSA_SV_LIMIT - entries))
 
-        if self.num_sats >= self.__GSA_SV_LIMIT:
-            for i in range(self.__GSA_SV_LIMIT):
-                data += ('%d' % self.__visible_prns[i]) + ','
-        else:
-            for prn in self.__visible_prns:
-                data += ('%d' % prn) + ','
-            data += ',' * (self.__GSA_SV_LIMIT - self.num_sats)
+        parts.extend([
+            self.__fmt_opt("{:.1f}", self.pdop),
+            self.__fmt_opt("{:.1f}", self.hdop),
+            self.__fmt_opt("{:.1f}", self.vdop)
+        ])
 
-        if self.pdop is not None:
-            data += ('%.1f' % self.pdop)
-        data += ','
-
-        if self.hdop is not None:
-            data += ('%.1f' % self.hdop)
-        data += ','
-
-        if self.vdop is not None:
-            data += ('%.1f' % self.vdop)
-
-        return [self.__format_sentence(self._prefix + 'GSA,' + data)]
+        return [self.__format_sentence(self._prefix + ",".join(parts))]
 
     def __gsv(self):
-        ''' Generate a sequence of NMEA GSV sentences.
-        '''
+        """ Generate a sequence of NMEA GSV sentences.
+        """
         if self.num_sats == 0:
             return []
 
         # Work out how many GSV sentences are required to show all satellites
-        messages = [''] * int(math.ceil(self.num_sats / self.__GSV_SV_LIMIT))
+        count = int(math.ceil(self.num_sats / self.__GSV_SV_LIMIT))
+        messages = []
         prn_i = 0
 
         # Iterate through each block of satellites
-        for i in range(len(messages)):
-            data = ''
-            data += ('%d' % len(messages)) + ','
-            data += ('%d' % (i + 1)) + ','
-            data += ('%d' % self.num_sats) + ','
+        for i in range(count):
+            parts = [
+                "GSV",
+                f"{len(messages):d}",
+                f"{i + 1:d}",
+                f"{self.num_sats:02d}"
+            ]
 
             # Iterate through each satellite in the block
             for j in range(self.__GSV_SV_LIMIT):
                 if prn_i < self.num_sats:
-                    satellite = next((sat for sat in self.satellites if sat.prn == self.__visible_prns[prn_i]))
-                    data += ('%d' % satellite.prn) + ','
-                    data += ('%d' % int(satellite.elevation)) + ','
-                    data += ('%d' % int(satellite.azimuth)) + ','
-                    data += ('%d' % int(satellite.snr))
+                    satellite = next((
+                        sat for sat in self.satellites if
+                        sat.prn == self.__visible_prns[prn_i]
+                    ))
+                    parts.extend([
+                        f"{satellite.prn:02d}",
+                        f"{satellite.elevation:02.0f}",
+                        f"{satellite.azimuth:03.0f}",
+                        f"{satellite.snr:02.0f}"
+                    ])
                     prn_i += 1
                 else:
-                    data += ',,,'
-
-                # Final satellite in block does not have any fields after it so
-                # don't add a ','
-                if j != self.__GSV_SV_LIMIT - 1:
-                    data += ','
+                    parts.extend(("", "", "", ""))
 
             # Generate the GSV sentence for this block
-            messages[i] = self.__format_sentence(self._prefix + 'GSV,' + data)
+            messages.append(
+                self.__format_sentence(self._prefix + ",".join(parts)))
 
         return messages
 
     def __vtg(self):
-        ''' Generate an NMEA VTG sentence.
-        '''
-        data = ''
-
-        if self.heading is not None:
-            data += (self.__angle_spec % self.heading)
-        data += ',T,'
-
-        if self.mag_heading is not None:
-            data += (self.__angle_spec % self.mag_heading)
-        data += ',M,'
-
-        if self.kph is not None:
-            data += (self.__speed_spec % self.__knots) + ',N,'
-            data += (self.__speed_spec % self.kph) + ',K'
-        else:
-            data += ',N,,K'
+        """ Generate an NMEA VTG sentence.
+        """
+        parts = [
+            "VTG",
+            self.__fmt_opt(self.__angle_spec, self.heading),
+            "T",
+            self.__fmt_opt(self.__angle_spec, self.mag_heading),
+            "M",
+            self.__fmt_opt(self.__speed_spec, self.__knots),
+            "N",
+            self.__fmt_opt(self.__speed_spec, self.kph),
+            "K"
+        ]
 
         if self.solution is not None:
-            data += ',' + self.solution.value
+            parts.append(self.solution.value)
 
-        return [self.__format_sentence(self._prefix + 'VTG,' + data)]
+        return [self.__format_sentence(self._prefix + ",".join(parts))]
 
     def __gll(self):
-        ''' Generate an NMEA GLL sentence.
-        '''
-        data = ''
-
-        data += self.__nmea_lat_lon() + ','
-
-        data += self.__nmea_time() + ','
-
-        data += self.__validity.value
+        """ Generate an NMEA GLL sentence.
+        """
+        parts = [
+            "GLL",
+            self.__nmea_lat_lon(),
+            self.__nmea_time(),
+            self.__validity.value
+        ]
 
         if self.solution is not None:
-            data += ',' + self.solution.value
+            parts.append(self.solution.value)
 
-        return [self.__format_sentence(self._prefix + 'GLL,' + data)]
+        return [self.__format_sentence(self._prefix + ",".join(parts))]
 
     def __zda(self):
-        ''' Generate an NMEA ZDA sentence.
-        '''
+        """ Generate an NMEA ZDA sentence.
+        """
         data = ''
 
-        if self.date_time is None:
+        if self.__utc is None:
             return []
 
-        data += self.__nmea_time() + ','
-
-        ts = self.date_time.utctimetuple()
-        data += ('%02d' % ts.tm_mday) + ',' + ('%02d' % ts.tm_mon) + \
-            ',' + ('%04d' % (ts.tm_year % 10000)) + ','
+        parts = [
+            "ZDA",
+            self.__nmea_time(),
+            self.__fmt_time("%d", self.__utc),
+            self.__fmt_time("%m", self.__utc),
+            self.__fmt_time("%Y", self.__utc)
+        ]
 
         offset = self.date_time.utcoffset()
         if offset is not None:
             hh = int(offset.total_seconds() / 3600)
             mm = int(offset.total_seconds() / 60 - hh * 60)
-            data += ('%02d' % hh) + ',' + ('%02d' % mm)
+            parts.append(f"{hh:02d}")
+            parts.append(f"{mm:02d}")
         else:
-            data += ','
+            parts.extend(("", ""))
 
-        return [self.__format_sentence(self._prefix + 'ZDA,' + data)]
+        return [self.__format_sentence(self._prefix + ",".join(parts))]
 
     def __init__(self,
                  min_sv_number,
                  max_sv_number,
                  total_sv_limit,
-                 output=('GGA', 'GLL', 'GSA', 'GSV', 'RMC', 'VTG', 'ZDA'),
+                 output=("GGA", "GLL", "GSA", "GSV", "RMC", "VTG", "ZDA"),
                  solution=SolutionMode.AUTONOMOUS_SOLUTION,
                  fix=FixType.SPS_FIX, manual_2d=False,
                  horizontal_dp=3,
@@ -419,20 +387,20 @@ class GnssReceiver(object):
                  lat=0.0,
                  lon=0.0,
                  altitude=0.0,
-                 geoid_sep=0.0,
+                 geoid_sep=None,
                  kph=0.0,
                  heading=0.0,
                  mag_heading=None,
-                 mag_var=0.0,
+                 mag_var=None,
                  num_sats=12,
                  hdop=1.0,
-                 vdop=1.0,
-                 pdop=1.0,
+                 vdop=None,
+                 pdop=None,
                  last_dgps=None,
                  dgps_station=None,
                  has_rtc=False):
-        ''' Initialise the GNSS instance with initial configuration.
-        '''
+        """ Initialise the GNSS instance with initial configuration.
+        """
         # Populate the sentence generation table
 
         self._prefix = 'GN'
@@ -451,28 +419,28 @@ class GnssReceiver(object):
 
         # Record parameters
         self.solution = solution
-        self.__fix = fix
+        self.fix = fix
         self.manual_2d = manual_2d
         if (date_time == 0):
-            self.date_time = datetime.datetime.now(tz_local)
+            self.date_time = datetime.now(TZ_LOCAL)
         else:
             self.date_time = date_time
-        self._lat = lat
-        self._lon = lon
+        self.lat = lat
+        self.lon = lon
         self.horizontal_dp = horizontal_dp
         self.vertical_dp = vertical_dp
         self.speed_dp = speed_dp
         self.angle_dp = angle_dp
         self.time_dp = time_dp
-        self._altitude = altitude
-        self._geoid_sep = geoid_sep
-        self._kph = kph
-        self._heading = heading
-        self._mag_heading = mag_heading
-        self._mag_var = mag_var
-        self._hdop = hdop
-        self._vdop = vdop
-        self._pdop = pdop
+        self.altitude = altitude
+        self.geoid_sep = geoid_sep
+        self.kph = kph
+        self.heading = heading
+        self.mag_heading = mag_heading
+        self.mag_var = mag_var
+        self.hdop = hdop
+        self.vdop = vdop
+        self.pdop = pdop
         self.last_dgps = last_dgps
         self.dgps_station = dgps_station
         self.output = output
@@ -488,6 +456,10 @@ class GnssReceiver(object):
         self.num_sats = num_sats
 
         self.__recalculate()
+
+    @property
+    def max_svs(self):
+        return self.__total_sv_limit
 
     @property
     def lat(self):
@@ -578,12 +550,51 @@ class GnssReceiver(object):
         self._mag_var = new_mag_var
 
     @property
+    def dgps_station(self):
+        return self._dgps_station
+
+    @dgps_station.setter
+    def dgps_station(self, new_dgps_station):
+        self._dgps_station = new_dgps_station
+
+    @property
+    def last_dgps(self):
+        return self._last_dgps
+
+    @last_dgps.setter
+    def last_dgps(self, new_last_dgps):
+        self._last_dgps = new_last_dgps
+
+    @property
+    def has_rtc(self):
+        return self._has_rtc
+
+    @has_rtc.setter
+    def has_rtc(self, new_has_rtc):
+        self._has_rtc = new_has_rtc
+
+    @property
+    def date_time(self):
+        return self._date_time
+
+    @date_time.setter
+    def date_time(self, new_date_time):
+        self._date_time = new_date_time
+
+    @property
     def num_sats(self):
         return len(self.__visible_prns)
 
     @num_sats.setter
     def num_sats(self, value):
-        assert value <= self.__total_sv_limit
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid SV count {value}")
+
+        if value < 0 or value > self.__total_sv_limit:
+            raise ValueError(f"Invalid SV count {value}")
+
         # Randomly make the requested number visible, make the rest invisible
         # (negative elevation)
         random.shuffle(self.satellites)
@@ -591,7 +602,7 @@ class GnssReceiver(object):
             self.satellites[i].elevation = random.random() * 90
         for i in range(value, len(self.satellites)):
             self.satellites[i].elevation = -90
-        self.satellites.sort(key=operator.attrgetter('prn', ))
+        self.satellites.sort(key=operator.attrgetter("prn", ))
         self.__recalculate()
 
     @property
@@ -601,8 +612,17 @@ class GnssReceiver(object):
     @output.setter
     def output(self, value):
         for item in value:
-            assert item in self.__gen_nmea.keys()
+            if item not in self.__gen_nmea.keys():
+                raise ValueError(f"{item} is not a valid NMEA sentence")
         self.__output = value
+
+    @property
+    def manual_2d(self):
+        return self._manual_2d
+
+    @manual_2d.setter
+    def manual_2d(self, value):
+        self._manual_2d = value
 
     @property
     def fix(self):
@@ -614,8 +634,12 @@ class GnssReceiver(object):
         self.__fix = value
 
     @property
+    def has_fix(self):
+        return self.fix != FixType.INVALID_FIX
+
+    @property
     def solution(self):
-        if self.fix == FixType.INVALID_FIX:
+        if not self.has_fix:
             return SolutionMode.INVALID_SOLUTION
         return self.__solution
 
@@ -626,27 +650,67 @@ class GnssReceiver(object):
         assert isinstance(value, SolutionMode)
         self.__solution = value
 
+    @property
+    def horizontal_dp(self):
+        return self._horizontal_dp
+
+    @horizontal_dp.setter
+    def horizontal_dp(self, value):
+        self._horizontal_dp = value
+
+    @property
+    def vertical_dp(self):
+        return self._vertical_dp
+
+    @vertical_dp.setter
+    def vertical_dp(self, value):
+        self._vertical_dp = value
+
+    @property
+    def speed_dp(self):
+        return self._speed_dp
+
+    @speed_dp.setter
+    def speed_dp(self, value):
+        self._speed_dp = value
+
+    @property
+    def angle_dp(self):
+        return self._angle_dp
+
+    @angle_dp.setter
+    def angle_dp(self, value):
+        self._angle_dp = value
+
     def move(self, duration=1.0):
-        ''' 'Move' the GNSS instance for the specified duration in seconds based on current heading and velocity.
-        '''
+        """
+        'Move' the GNSS instance for the specified duration in seconds
+        based on current heading and velocity.
+        """
         self.__recalculate()
-        if self.lat is not None and self.lon is not None and self.heading is not None and self.kph is not None and self.kph > sys.float_info.epsilon:
+        if any([x is None for x in (self.lat, self.lon, self.heading, self.kph)]):
+            return
+        if self.kph > sys.float_info.epsilon:
             speed_ms = self.kph * 1000.0 / 3600.0
             d = speed_ms * duration
             out = Geodesic.WGS84.Direct(self.lat, self.lon, self.heading, d)
-            self.lat = out['lat2']
-            self.lon = out['lon2']
+            self.lat = out["lat2"]
+            self.lon = out["lon2"]
             self.__recalculate()
 
     def distance(self, other_lat, other_lon):
-        ''' Returns the current distance (in km) between the GNSS instance and an arbitrary lat/lon coordinate.
-        '''
+        """
+        Returns the current distance (in km) between the GNSS instance
+        and an arbitrary lat/lon coordinate.
+        """
         out = Geodesic.WGS84.Inverse(self.lat, self.lon, other_lat, other_lon)
-        return out['s12'] / 1000.0
+        return out["s12"] / 1000.0
 
     def get_output(self):
-        ''' Returns a list of NMEA sentences (not new line terminated) that the GNSS instance was configured to output.
-        '''
+        """
+        Returns a list of NMEA sentences (not new line terminated) that
+        the GNSS instance was configured to output.
+        """
         self.__recalculate()
         outputs = []
         for format in self.output:
@@ -654,8 +718,10 @@ class GnssReceiver(object):
         return outputs
 
     def supported_output(self):
-        ''' Returns a tuple of supported NMEA sentences that the GNSS  class is capable of producing.
-        '''
+        """
+        Returns a tuple of supported NMEA sentences that
+        the GNSS class is capable of producing.
+        """
         return self.__gen_nmea.keys()
 
 
@@ -668,7 +734,7 @@ class GpsReceiver(GnssReceiver):
             total_sv_limit=32,
             *args,
             **kwargs)
-        self._prefix = 'GP'
+        self._prefix = "GP"
 
 
 class GlonassReceiver(GnssReceiver):
@@ -680,4 +746,4 @@ class GlonassReceiver(GnssReceiver):
             total_sv_limit=24,
             *args,
             **kwargs)
-        self._prefix = 'GL'
+        self._prefix = "GL"

@@ -1,554 +1,480 @@
-import tkinter
-from tkinter import font
-import collections
+import tkinter as tk
+from tkinter import ttk, messagebox
+from tkinter.font import Font
+from collections import OrderedDict
 from . import models
 from .constants import FixType, SolutionMode
 from .simulator import Simulator
 import glob
 import re
-import datetime
+from datetime import datetime
 import time
 import serial
 import sys
 import os
 from serial.tools import list_ports
-from importlib.metadata import version, PackageNotFoundError
+from serial import Serial
+from importlib.metadata import version
 from pathlib import Path
 
-# Scan available serial ports
-ports = [p.device for p in sorted(list_ports.comports())]
-
-root = tkinter.Tk()
-
-name = "nmeasim"
-
-try:
-    with (Path(sys._MEIPASS) / "version_file").open() as fp:
-        version = fp.read().strip()
-    base_dir = Path(sys._MEIPASS) / name
-except AttributeError:
-    base_dir = Path(sys.modules[name].__file__).parent
-    version = version(name)
-
-root.title('{} {}'.format(name, version))
-root.iconbitmap(str(base_dir / "icon.ico"))
-
-textwidth = 60  # text field width
-customFont = font.Font(size=10)
-smallerFont = font.Font(size=9)
-
-# UI collection
-vars = collections.OrderedDict()
-labels = collections.OrderedDict()
-controls = collections.OrderedDict()
-formats = collections.OrderedDict()
-
-# Create default format strings based on library outputs
-defaultformatstring = ''
-formats = sorted(models.GpsReceiver().supported_output())
-for format in formats:
-    defaultformatstring += format
-    if format != formats[-1]:
-        defaultformatstring += ', '
-
-frame = tkinter.LabelFrame(text='Configuration', padx=5, pady=5)
-
-# Instantiate configuration variables and their respective label/edit fields.
-vars['output'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Formats (ordered):')
-vars[next(reversed(vars.keys()))].set(defaultformatstring)
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-bgcolor = controls[next(reversed(vars.keys()))].cget('background')
-
-vars['comport'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='COM port (optional):')
-controls[next(reversed(vars.keys()))] = tkinter.OptionMenu(frame,
-                                               vars[next(reversed(vars.keys()))], *tuple(ports))
-
-vars['baudrate'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Baud rate:')
-vars[next(reversed(vars.keys()))].set(4800)
-controls[next(reversed(vars.keys()))] = tkinter.OptionMenu(frame, vars[next(reversed(vars.keys()))],
-                                               *tuple(serial.Serial.BAUDRATES[serial.Serial.BAUDRATES.index(4800):]))
-
-vars['static'] = tkinter.BooleanVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Static output:')
-vars[next(reversed(vars.keys()))].set(False)
-controls[next(reversed(vars.keys()))] = tkinter.Checkbutton(frame,
-                                                text='', variable=vars[next(reversed(vars.keys()))])
-
-vars['static'] = tkinter.BooleanVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Static output:')
-vars[next(reversed(vars.keys()))].set(False)
-controls[next(reversed(vars.keys()))] = tkinter.Checkbutton(frame,
-                                                text='', variable=vars[next(reversed(vars.keys()))])
-
-vars['interval'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Update Interval (s):')
-vars[next(reversed(vars.keys()))].set('1.0')
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-vars['step'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Simulation Step (s):')
-vars[next(reversed(vars.keys()))].set('1.0')
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-vars['heading_variation'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame,
-                                        text='Simulated heading variation (deg):')
-vars[next(reversed(vars.keys()))].set('')
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-vars['fix'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Fix type:')
-vars[next(reversed(vars.keys()))].set(FixType.SPS_FIX.nice_name)
-controls[next(reversed(vars.keys()))] = tkinter.OptionMenu(frame,
-                                               vars[next(reversed(vars.keys()))], *tuple(FixType.nice_names()))
-
-vars['solution'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='FAA solution mode:')
-vars[next(reversed(vars.keys()))].set(SolutionMode.AUTONOMOUS_SOLUTION.nice_name)
-controls[next(reversed(vars.keys()))] = tkinter.OptionMenu(frame,
-                                               vars[next(reversed(vars.keys()))], *tuple(SolutionMode.nice_names()))
-
-vars['num_sats'] = tkinter.IntVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Visible satellites:')
-vars[next(reversed(vars.keys()))].set(15)
-controls[next(reversed(vars.keys()))] = tkinter.OptionMenu(frame,
-                                               vars[next(reversed(vars.keys()))], *tuple(range(33)))
-
-vars['manual_2d'] = tkinter.BooleanVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Manual 2-D mode:')
-vars[next(reversed(vars.keys()))].set(False)
-controls[next(reversed(vars.keys()))] = tkinter.Checkbutton(frame,
-                                                text='', variable=vars[next(reversed(vars.keys()))])
-
-vars['dgps_station'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='DGPS Station ID:')
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-vars['last_dgps'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame,
-                                        text='Time since DGPS update (s):')
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-vars['date_time'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame,
-                                        text='Initial ISO 8601 date/time/offset:')
-vars[next(reversed(vars.keys()))].set(datetime.datetime.now(models.TimeZone(time.timezone)).isoformat())
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-vars['time_dp'] = tkinter.IntVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Time precision (d.p.):')
-vars[next(reversed(vars.keys()))].set('3')
-controls[next(reversed(vars.keys()))] = tkinter.OptionMenu(frame,
-                                               vars[next(reversed(vars.keys()))], *tuple(range(4)))
-
-vars['lat'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Latitude (deg):')
-vars[next(reversed(vars.keys()))].set('-45.352354')
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-vars['lon'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Longitude (deg):')
-vars[next(reversed(vars.keys()))].set('-134.687995')
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-vars['altitude'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Altitude (m):')
-vars[next(reversed(vars.keys()))].set('-11.442')
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-vars['geoid_sep'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Geoid separation (m):')
-vars[next(reversed(vars.keys()))].set('-42.55')
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-vars['horizontal_dp'] = tkinter.IntVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame,
-                                        text='Horizontal precision (d.p.):')
-vars[next(reversed(vars.keys()))].set(3)
-controls[next(reversed(vars.keys()))] = tkinter.OptionMenu(frame,
-                                               vars[next(reversed(vars.keys()))], *tuple(range(1, 6)))
-
-vars['vertical_dp'] = tkinter.IntVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame,
-                                        text='Vertical precision (d.p.):')
-vars[next(reversed(vars.keys()))].set(1)
-controls[next(reversed(vars.keys()))] = tkinter.OptionMenu(frame,
-                                               vars[next(reversed(vars.keys()))], *tuple(range(4)))
-
-vars['kph'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Speed (km/hr):')
-vars[next(reversed(vars.keys()))].set('45.61')
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-vars['heading'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Heading (deg True):')
-vars[next(reversed(vars.keys()))].set('123.56')
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-vars['mag_heading'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame,
-                                        text='Magnetic heading (deg True):')
-vars[next(reversed(vars.keys()))].set('124.67')
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-vars['mag_var'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame,
-                                        text='Magnetic Variation (deg):')
-vars[next(reversed(vars.keys()))].set('-12.33')
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-vars['speed_dp'] = tkinter.IntVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='Speed precision (d.p.):')
-vars[next(reversed(vars.keys()))].set(1)
-controls[next(reversed(vars.keys()))] = tkinter.OptionMenu(frame,
-                                               vars[next(reversed(vars.keys()))], *tuple(range(4)))
-
-vars['angle_dp'] = tkinter.IntVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame,
-                                        text='Angular precision (d.p.):')
-vars[next(reversed(vars.keys()))].set(1)
-controls[next(reversed(vars.keys()))] = tkinter.OptionMenu(frame,
-                                               vars[next(reversed(vars.keys()))], *tuple(range(4)))
-
-vars['hdop'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='HDOP:')
-vars[next(reversed(vars.keys()))].set('3.0')
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-vars['vdop'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='VDOP:')
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-vars['pdop'] = tkinter.StringVar()
-labels[next(reversed(vars.keys()))] = tkinter.Label(frame, text='PDOP:')
-controls[next(reversed(vars.keys()))] = tkinter.Entry(frame, textvar=vars[next(reversed(vars.keys()))])
-
-# Pack the controls
-current_row = 0
-for item in controls.keys():
-    labels[item].config(font=customFont)
-    labels[item].grid(row=current_row, sticky=tkinter.E, column=0)
-
-    if isinstance(controls[item], tkinter.Entry):
-        controls[item].config(width=textwidth, font=customFont)
-        controls[item].grid(
-            row=current_row, sticky=tkinter.E + tkinter.W, column=1)
-    elif isinstance(controls[item], tkinter.OptionMenu):
-        controls[item].config(font=smallerFont, relief=tkinter.SUNKEN,
-                              borderwidth=1, activebackground=bgcolor, background=bgcolor)
-        controls[item].grid(row=current_row, sticky=tkinter.W, column=1)
-    else:
-        controls[item].grid(row=current_row, sticky=tkinter.W, column=1)
-    current_row += 1
-
-# Function that gets called from the UI to start the simulator
-sim = Simulator()
-
-
-def update():
-    with sim.lock:
-        formatstring = ''
-        for format in sim.gps.output:
-            formatstring += format
-            if format != sim.gps.output[-1]:
-                formatstring += ', '
-
-        vars['output'].set(formatstring)
-        vars['static'].set(sim.static)
-        vars['interval'].set(sim.interval)
-        vars['step'].set(sim.step)
-
-        if sim.heading_variation == None:
-            vars['heading_variation'].set('')
-        else:
-            vars['heading_variation'].set(str(sim.heading_variation))
-
-        vars['fix'].set(sim.gps.fix.nice_name)
-        vars['solution'].set(sim.gps.solution.nice_name)
-        vars['num_sats'].set(sim.gps.num_sats)
-        vars['manual_2d'].set(sim.gps.manual_2d)
-
-        if sim.gps.dgps_station == None:
-            vars['dgps_station'].set('')
-        else:
-            vars['dgps_station'].set(str(sim.gps.dgps_station))
-
-        if sim.gps.last_dgps == None:
-            vars['last_dgps'].set('')
-        else:
-            vars['last_dgps'].set(str(sim.gps.last_dgps))
-
-        if sim.gps.date_time == None:
-            vars['date_time'].set('')
-        else:
-            vars['date_time'].set(str(sim.gps.date_time.isoformat()))
-
-        vars['time_dp'].set(sim.gps.time_dp)
-
-        if sim.gps._lat == None:
-            vars['lat'].set('')
-        else:
-            vars['lat'].set(str(sim.gps.lat))
-
-        if sim.gps.lon == None:
-            vars['lon'].set('')
-        else:
-            vars['lon'].set(str(sim.gps.lon))
-
-        if sim.gps.altitude == None:
-            vars['altitude'].set('')
-        else:
-            vars['altitude'].set(str(sim.gps.altitude))
-
-        if sim.gps.geoid_sep == None:
-            vars['geoid_sep'].set('')
-        else:
-            vars['geoid_sep'].set(str(sim.gps.geoid_sep))
-
-        vars['horizontal_dp'].set(sim.gps.horizontal_dp)
-        vars['vertical_dp'].set(sim.gps.vertical_dp)
-
-        if sim.gps.kph == None:
-            vars['kph'].set('')
-        else:
-            vars['kph'].set(str(sim.gps.kph))
-
-        if sim.gps.heading == None:
-            vars['heading'].set('')
-        else:
-            vars['heading'].set(str(sim.gps.heading))
-
-        if sim.gps.mag_heading == None:
-            vars['mag_heading'].set('')
-        else:
-            vars['mag_heading'].set(str(sim.gps.mag_heading))
-
-        if sim.gps.mag_var == None:
-            vars['mag_var'].set('')
-        else:
-            vars['mag_var'].set(str(sim.gps.mag_var))
-
-        vars['speed_dp'].set(sim.gps.speed_dp)
-        vars['angle_dp'].set(sim.gps.angle_dp)
-
-        if sim.gps.hdop == None:
-            vars['hdop'].set('')
-        else:
-            vars['hdop'].set(str(sim.gps.hdop))
-
-        if sim.gps.vdop == None:
-            vars['vdop'].set('')
-        else:
-            vars['vdop'].set(str(sim.gps.vdop))
-
-        if sim.gps.vdop == None:
-            vars['vdop'].set('')
-        else:
-            vars['pdop'].set(str(sim.gps.pdop))
-
-
-def poll():
-    if sim.is_running():
-        root.after(200, poll)
-        update()
-
-
-def start():
-    global sim
-
-    if sim.is_running():
-        sim.kill()
-
-    sim = Simulator()
-
-    # Change configuration under lock in case its already running from last
-    # time
-    with sim.lock:
+
+class _NmeaSerialInfo(object):
+    @staticmethod
+    def ports():
+        return [p.device for p in sorted(list_ports.comports())]
+
+    @staticmethod
+    def baudrates():
+        return Serial.BAUDRATES[Serial.BAUDRATES.index(4800):]
+
+
+class _Control(object):
+    def __init__(
+            self,
+            master,
+            name,
+            tk_var_type,
+            label):
+        self._var = tk_var_type()
+        self._label = tk.Label(
+            master=master, text=label)
+
+    @property
+    def value(self):
+        return self._var.get()
+
+    @value.setter
+    def value(self, value):
+        self._var.set(value)
+
+    def position(self, row):
+        self._label.grid(row=row, sticky=tk.E, column=0)
+        self._widget.grid(row=row, sticky=tk.W+tk.E, column=1)
+
+    def disable(self):
+        self._widget.configure(state=tk.DISABLED)
+
+    def enable(self):
+        self._widget.configure(state=tk.NORMAL)
+
+
+class _TextBox(_Control):
+    def __init__(self, master, name, label, tk_var_type, optional):
+        super().__init__(
+            master=master,
+            name=name,
+            tk_var_type=tk_var_type,
+            label=label)
+        self._optional = optional
+        self._widget = ttk.Entry(
+            master=master,
+            textvar=self._var
+        )
+
+    @property
+    def value(self):
+        if self._optional and not self._widget.get():
+            return None
+        return self._var.get()
+
+    @value.setter
+    def value(self, value):
+        self._var.set("" if value is None else value)
+
+
+class _CheckBox(_Control):
+    def __init__(self, master, name, label):
+        super().__init__(
+            master=master,
+            name=name,
+            tk_var_type=tk.BooleanVar,
+            label=label)
+        self._widget = ttk.Checkbutton(
+            master=master,
+            text="",
+            variable=self._var
+        )
+
+
+class _ListBox(_Control):
+    def __init__(self, master, name, label, options, tk_var_type):
+        super().__init__(
+            master=master,
+            name=name,
+            tk_var_type=tk_var_type,
+            label=label)
+        self._widget = ttk.Combobox(
+            master,
+            state="readonly",
+            textvariable=self._var,
+            width=40,
+            font=Font(size=9),
+            values=tuple(options))
+
+    @property
+    def value(self):
+        if not self._var.get():
+            return None
+        return self._var.get()
+
+    @value.setter
+    def value(self, value):
+        self._var.set("" if value is None else value)
+
+    def enable(self):
+        self._widget.configure(state="readonly")
+
+
+class _Tab(object):
+    def __init__(self, master, name, label):
+        self.widget = ttk.Frame(master)
+        master.add(self.widget, text=label)
+        self._controls = []
+
+    def add(self, control):
+        self._controls.append(control)
+        return control
+
+    def grid(self):
+        current_row = 0
+        for control in self._controls:
+            control.position(current_row)
+            current_row += 1
+
+
+class Interface(object):
+
+    def _add_text_box(
+            self, tab, name, label, tk_var_type=tk.StringVar, optional=False):
+        self._controls[name] = self._tabs[tab].add(_TextBox(
+            self._tabs[tab].widget, name, label, tk_var_type, optional))
+
+    def _add_check_box(
+            self, tab, name, label):
+        self._controls[name] = self._tabs[tab].add(_CheckBox(
+            self._tabs[tab].widget, name, label))
+
+    def _add_list_box(
+            self, tab, name, label, options, tk_var_type=tk.StringVar):
+        self._controls[name] = self._tabs[tab].add(_ListBox(
+            self._tabs[tab].widget, name, label, options, tk_var_type))
+
+    def _add_tab(self, name, label):
+        self._tabs[name] = _Tab(self._notebook, name, label)
+
+    def __init__(self):
+        self._sim = Simulator()
+        self._sim.gps.kph = 10.0
+        self._root = tk.Tk()
+        name = "nmeasim"
+
+        try:
+            with (Path(sys._MEIPASS) / "version_file").open() as fp:
+                version_string = fp.read().strip()
+            base_dir = Path(sys._MEIPASS) / name
+        except AttributeError:
+            base_dir = Path(sys.modules[name].__file__).parent
+            version_string = version(name)
+
+        self._root.title('{} {}'.format(name, version_string))
+        self._root.iconbitmap(str(base_dir / "icon.ico"))
+
+        with (base_dir / "LICENSE").open() as fp:
+            self._license = fp.read()
+
+        # UI collection
+        self._controls = OrderedDict()
+        self._notebook = ttk.Notebook(self._root)
+        self._tabs = OrderedDict()
+
+        self._add_tab("simulation", "Simulation")
+        self._add_tab("gnss", "GNSS")
+
+        self._add_list_box(
+            "simulation", "comport", "COM port (optional)",
+            [""] + _NmeaSerialInfo.ports())
+        self._add_list_box(
+            "simulation", "baudrate", "Baud rate",
+            _NmeaSerialInfo.baudrates(),
+            tk.IntVar)
+        self._add_check_box("simulation", "static", "Static output")
+        self._add_text_box(
+            "simulation", "interval", "Update interval (s)", tk.DoubleVar)
+        self._add_text_box(
+            "simulation", "step", "Simulation step (s)", tk.DoubleVar)
+        self._add_text_box(
+            "simulation",
+            "heading_variation",
+            "Simulated heading variation (deg)",
+            tk.DoubleVar,
+            optional=True)
+        self._add_check_box(
+            "simulation", "has_rtc", "Simulate independent RTC")
+
+        self._add_list_box(
+            "simulation", "time_dp", "Time precision (d.p.)",
+            range(4),
+            tk.IntVar)
+        self._add_list_box(
+            "simulation", "horizontal_dp", "Horizontal precision (d.p.)",
+            range(4),
+            tk.IntVar
+        )
+        self._add_list_box(
+            "simulation", "vertical_dp", "Vertical precision (d.p.)",
+            range(4),
+            tk.IntVar
+        )
+        self._add_list_box(
+            "simulation", "speed_dp", "Speed precision (d.p.)",
+            range(4),
+            tk.IntVar
+        )
+        self._add_list_box(
+            "simulation", "angle_dp", "Angular precision (d.p.)",
+            range(4),
+            tk.IntVar
+        )
+
+        self._add_text_box(
+            "gnss", "output", "Formats (ordered)")
+        self._add_list_box(
+            "gnss", "fix", "Fix type",
+            self._sim.gps.fix.nice_names())
+        self._add_list_box(
+            "gnss", "solution", "FAA solution mode",
+            self._sim.gps.solution.nice_names())
+        self._add_list_box(
+            "gnss", "num_sats", "Visible satellites",
+            range(self._sim.gps.max_svs + 1),
+            tk.IntVar)
+        self._add_check_box("gnss", "manual_2d", "Manual 2-D mode")
+
+        self._add_text_box(
+            "gnss", "dgps_station", "DGPS Station ID", tk.IntVar,
+            optional=True)
+        self._add_text_box(
+            "gnss", "last_dgps", "Time since DGPS update (s)", tk.DoubleVar,
+            optional=True)
+
+        self._add_text_box(
+            "gnss", "date_time", "Initial ISO 8601 date/time/offset",
+            optional=True)
+
+        self._add_text_box(
+            "gnss", "lat", "Latitude (deg)", tk.DoubleVar,
+            optional=True)
+        self._add_text_box(
+            "gnss", "lon", "Longitude (deg)", tk.DoubleVar,
+            optional=True)
+        self._add_text_box(
+            "gnss", "altitude", "Altitude (m)", tk.DoubleVar,
+            optional=True)
+        self._add_text_box(
+            "gnss", "geoid_sep", "Geoid separation (m)", tk.DoubleVar,
+            optional=True)
+
+        self._add_text_box(
+            "gnss", "kph", "Speed (km/hr)", tk.DoubleVar,
+            optional=True)
+        self._add_text_box(
+            "gnss", "heading", "Heading (deg True)", tk.DoubleVar,
+            optional=True)
+        self._add_text_box(
+            "gnss", "mag_heading", "Magnetic heading (deg True)", tk.DoubleVar,
+            optional=True)
+        self._add_text_box(
+            "gnss", "mag_var", "Magnetic variation (deg)", tk.DoubleVar,
+            optional=True)
+
+        self._add_text_box(
+            "gnss", "hdop", "HDOP", tk.DoubleVar,
+            optional=True)
+        self._add_text_box(
+            "gnss", "vdop", "VDOP", tk.DoubleVar,
+            optional=True)
+        self._add_text_box(
+            "gnss", "pdop", "PDOP", tk.DoubleVar,
+            optional=True)
+
+        self.__start_stop_button = ttk.Button(
+            self._root, text="Start", command=self.start)
+
+        self.__about_button = ttk.Button(
+            self._root, text="About", command=self.about)
+
+        # Pack the controls
+        for tab in self._tabs.values():
+            tab.grid()
+        self._notebook.pack(padx=5, pady=5, side=tk.TOP, expand=1, fill='both')
+        self.__start_stop_button.pack(padx=5, pady=5, side=tk.RIGHT)
+        self.__about_button.pack(padx=5, pady=5, side=tk.RIGHT)
+        self._root.resizable(False, False)
+        self.update()
+
+    def about(self):
+        messagebox.showinfo("About", self._license)
+
+    def update(self):
+        with self._sim.lock:
+            self._controls['baudrate'].value = self._sim.comport.baudrate
+            self._controls['output'].value = ", ".join(self._sim.gps.output)
+            self._controls['static'].value = self._sim.static
+            self._controls['interval'].value = self._sim.interval
+            self._controls['step'].value = self._sim.step
+            self._controls['heading_variation'].value = \
+                self._sim.heading_variation
+
+            self._controls['fix'].value = self._sim.gps.fix.nice_name
+            self._controls['solution'].value = self._sim.gps.solution.nice_name
+            self._controls['num_sats'].value = self._sim.gps.num_sats
+            self._controls['manual_2d'].value = self._sim.gps.manual_2d
+            self._controls['dgps_station'].value = self._sim.gps.dgps_station
+            self._controls['last_dgps'].value = self._sim.gps.last_dgps
+
+            self._controls['date_time'].value = (
+                self._sim.gps.date_time.isoformat()
+                if self._sim.gps.date_time else None
+            )
+            self._controls['time_dp'].value = self._sim.gps.time_dp
+            self._controls['has_rtc'].value = self._sim.gps.has_rtc
+
+            self._controls['lat'].value = self._sim.gps.lat
+            self._controls['lon'].value = self._sim.gps.lon
+            self._controls['altitude'].value = self._sim.gps.altitude
+            self._controls['geoid_sep'].value = self._sim.gps.geoid_sep
+            self._controls['horizontal_dp'].value = self._sim.gps.horizontal_dp
+            self._controls['vertical_dp'].value = self._sim.gps.vertical_dp
+
+            self._controls['kph'].value = self._sim.gps.kph
+            self._controls['heading'].value = self._sim.gps.heading
+            self._controls['mag_heading'].value = self._sim.gps.mag_heading
+            self._controls['mag_var'].value = self._sim.gps.mag_var
+            self._controls['speed_dp'].value = self._sim.gps.speed_dp
+            self._controls['angle_dp'].value = self._sim.gps.angle_dp
+
+            self._controls['hdop'].value = self._sim.gps.hdop
+            self._controls['vdop'].value = self._sim.gps.vdop
+            self._controls['pdop'].value = self._sim.gps.pdop
+
+    def poll(self):
+        if not self._sim.is_running():
+            return
+        self._root.after(200, self.poll)
+        self.update()
+
+    def _convert_param(self, name, converter=None):
+        try:
+            value = self._controls[name].value
+            if value is not None and converter:
+                value = converter(value)
+            setattr(self._sim.gps, name, value)
+        except tk.TclError:
+            pass
+
+    @staticmethod
+    def _format_converter(format_string):
+        return [f.strip() for f in format_string.split(',')]
+
+    def start(self):
+        if self._sim.is_running():
+            self._sim.kill()
+
+        self._sim = Simulator()
 
         # Go through each field and parse them for the simulator
-        # If anything invalid pops up revert to a safe value (e.g. None)
+        self._sim.static = self._controls["static"].value
         try:
-            formats = [x.strip() for x in vars['output'].get().split(',')]
-            sim.gps.output = formats
-        except:
-            raise
-            vars['output'].set(defaultformatstring)
-            formats = [x.strip() for x in vars['output'].get().split(',')]
-            sim.gps.output = formats
-
-        sim.static = vars['static'].get()
-        try:
-            sim.interval = float(vars['interval'].get())
-        except:
-            sim.interval = 1.0
-            vars['interval'].set('1.0')
-        try:
-            sim.step = float(vars['step'].get())
-        except:
-            sim.step = 1.0
-            vars['step'].set('1.0')
+            self._sim.interval = self._controls["interval"].value
+        except tk.TclError:
+            pass
 
         try:
-            sim.heading_variation = float(vars['heading_variation'].get())
-        except:
-            sim.heading_variation = None
-            vars['heading_variation'].set('')
-
-        sim.gps.fix = FixType.from_nice_name(vars['fix'].get())
-        sim.gps.solution = SolutionMode.from_nice_name(vars['solution'].get())
-        sim.gps.manual_2d = vars['manual_2d'].get()
-        sim.gps.num_sats = vars['num_sats'].get()
+            self._sim.step = self._controls["step"].value
+        except tk.TclError:
+            pass
 
         try:
-            sim.gps.dgps_station = int(vars['dgps_station'].get())
-        except:
-            sim.gps.dgps_station = None
-            vars['dgps_station'].set('')
+            self._sim.heading_variation = \
+                self._controls["heading_variation"].value
+        except tk.TclError:
+            pass
 
+        self._convert_param(
+            "output", self._format_converter)
+        self._convert_param(
+            "fix", self._sim.gps.fix.from_nice_name)
+        self._convert_param(
+            "solution", self._sim.gps.solution.from_nice_name)
+        self._convert_param("manual_2d")
+        self._convert_param("num_sats")
+        self._convert_param("dgps_station")
+        self._convert_param("last_dgps")
+        self._convert_param(
+            "date_time", datetime.fromisoformat)
+        self._convert_param("has_rtc")
+        self._convert_param("time_dp")
+
+        self._convert_param("lat")
+        self._convert_param("lon")
+        self._convert_param("altitude")
+        self._convert_param("geoid_sep")
+        self._convert_param("horizontal_dp")
+        self._convert_param("vertical_dp")
+
+        self._convert_param("kph")
+        self._convert_param("heading")
+        self._convert_param("mag_heading")
+        self._convert_param("mag_var")
+        self._convert_param("speed_dp")
+        self._convert_param("angle_dp")
+
+        self._convert_param("hdop")
+        self._convert_param("vdop")
+        self._convert_param("pdop")
+
+        self._sim.comport.baudrate = self._controls["baudrate"].value
+
+        self.__start_stop_button.configure(text="Stop", command=self.stop)
+        for item in self._controls.keys():
+            self._controls[item].disable()
+        self.update()
+
+        # Finally start serving
+        # (non-blocking as we are in an asynchronous UI thread)
+        self._sim.serve(
+            comport=self._controls['comport'].value,
+            blocking=False)
+
+        # Poll the simulator to update the UI
+        self.poll()
+
+    def stop(self):
+        if self._sim.is_running():
+            self._sim.kill()
+
+        self.update()
+        for control in self._controls.values():
+            control.enable()
+        self.__start_stop_button.configure(text="Start", command=self.start)
+
+    def run(self):
         try:
-            sim.gps.last_dgps = float(vars['last_dgps'].get())
-        except:
-            sim.gps.last_dgps = None
-            vars['last_dgps'].set('')
+            self._root.mainloop()
+        finally:
+            if self._sim.is_running():
+                self._sim.kill()
 
-        dt = vars['date_time'].get()
-        if dt == '':
-            sim.gps.date_time = None
-        else:
-            try:
-                tz = dt[-6:].split(':')
-                dt = dt[:-6]
-                utcoffset = int(tz[0]) * 3600 + int(tz[1]) * 60
-
-                sim.gps.date_time = datetime.datetime.strptime(
-                    dt, '%Y-%m-%dT%H:%M:%S.%f')
-                sim.gps.date_time = sim.gps.date_time.replace(
-                    tzinfo=models.TimeZone(utcoffset))
-            except:
-                sim.gps.date_time = datetime.datetime.now(
-                    models.TimeZone(time.timezone))
-                vars['date_time'].set(sim.gps.date_time.isoformat())
-
-        sim.gps.time_dp = vars['time_dp'].get()
-
-        try:
-            sim.gps._lat = float(vars['lat'].get())
-        except:
-            sim.gps._lat = None
-            vars['lat'].set('')
-
-        try:
-            sim.gps.lon = float(vars['lon'].get())
-        except:
-            sim.gps.lon = None
-            vars['lon'].set('')
-
-        try:
-            sim.gps.altitude = float(vars['altitude'].get())
-        except:
-            sim.gps.altitude = None
-            vars['altitude'].set('')
-
-        try:
-            sim.gps.geoid_sep = float(vars['geoid_sep'].get())
-        except:
-            sim.gps.geoid_sep = None
-            vars['geoid_sep'].set('')
-
-        sim.gps.horizontal_dp = vars['horizontal_dp'].get()
-
-        sim.gps.vertical_dp = vars['vertical_dp'].get()
-
-        try:
-            sim.gps.kph = float(vars['kph'].get())
-        except:
-            sim.gps.kph = None
-            vars['kph'].set('')
-
-        try:
-            sim.gps.heading = float(vars['heading'].get())
-        except:
-            sim.gps.heading = None
-            vars['heading'].set('')
-
-        try:
-            sim.gps.mag_heading = float(vars['mag_heading'].get())
-        except:
-            sim.gps.mag_heading = None
-            vars['mag_heading'].set('')
-
-        try:
-            sim.gps.mag_var = float(vars['mag_var'].get())
-        except:
-            sim.gps.mag_var = None
-            vars['mag_var'].set('')
-
-        sim.gps.speed_dp = vars['speed_dp'].get()
-
-        sim.gps.angle_dp = vars['angle_dp'].get()
-
-        try:
-            sim.gps.hdop = float(vars['hdop'].get())
-        except:
-            sim.gps.hdop = None
-            vars['hdop'].set('')
-
-        try:
-            sim.gps.vdop = float(vars['vdop'].get())
-        except:
-            sim.gps.vdop = None
-            vars['vdop'].set('')
-
-        try:
-            sim.gps.pdop = float(vars['pdop'].get())
-        except:
-            sim.gps.pdop = None
-            vars['pdop'].set('')
-
-        sim.comport.baudrate = vars['baudrate'].get()
-
-    # Finally start serving (non-blocking as we are in an asynchronous UI
-    # thread)
-    port = vars['comport'].get()
-    if port == '':
-        port = None
-
-    startstopbutton.config(command=stop, text='Stop')
-    for item in controls.keys():
-        controls[item].config(state=tkinter.DISABLED)
-    sim.serve(port, blocking=False)
-    poll()
-
-
-def stop():
-    if sim.is_running():
-        sim.kill()
-
-    startstopbutton.config(command=start, text='Start')
-
-    update()
-
-    for item in controls.keys():
-        controls[item].config(state=tkinter.NORMAL)
-
-startstopbutton = tkinter.Button(root, text='Start', command=start)
 
 def main():
-    frame.pack(padx=5, pady=5, side=tkinter.TOP)
-    startstopbutton.pack(padx=5, pady=5, side=tkinter.RIGHT)
+    gui = Interface()
 
     # Start the UI!
     try:
-        root.mainloop()
+        gui.run()
     except KeyboardInterrupt:
         pass
-    finally:
-        # Clean up
-        sim.kill()
+
 
 if __name__ == "__main__":
     main()

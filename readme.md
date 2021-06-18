@@ -1,4 +1,4 @@
-# `nmeasim`
+# nmeasim
 
 A Python 3 GNSS/NMEA receiver simulation.
 
@@ -6,7 +6,7 @@ A partial rewrite of the Python 2 [`gpssim`](https://pypi.org/project/gpssim/) p
 
 ## Overview
 
-The core of the package is a GNSS simulation library (`nmeasim.simulator`) that emits NMEA sentences. The following are supported:
+The core of the package is `nmeasim.simulator`, a GNSS simulation library that emits NMEA sentences. The following are supported:
 
 **Geospatial (GGA, GLL, RMC, VTG, ZDA)** - simulated using a consistent location/velocity model, time using machine time (not NTP, unless the machine happens to be NTP synchronised).
 
@@ -30,6 +30,15 @@ Features:
 
 This can be run from source using the console script `nmeasim`.
 The GUI is also delivered as a standalone Windows application by the build pipeline - this can be downloaded and executed independently without any Python dependencies.
+
+
+## Install
+
+```sh
+python -m pip install nmeasim
+```
+
+See [releases](https://gitlab.com/nmeasim/nmeasim/-/releases) for pre-built Windows GUI binaries.
 
 ## License
 

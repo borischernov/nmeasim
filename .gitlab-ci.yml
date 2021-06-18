@@ -20,11 +20,10 @@ build:wheel:
   image: python:latest
   before_script:
     - git fetch --tags
-    - pip install virtualenv
-    - virtualenv .venv
+    - python -m venv .venv
     - source .venv/bin/activate
   script:
-    - pip wheel --editable . --wheel-dir dist
+    - python -m pip wheel --editable . --wheel-dir dist
   artifacts:
     expire_in: 1 day
     paths:
@@ -42,12 +41,9 @@ build:exe:
     - choco install --no-progress -y python
     - RefreshEnv
     - git fetch --tags
-    - pip install virtualenv
-    - virtualenv .venv
-    - .venv\Scripts\Activate.ps1
-    - pip install pyinstaller
+    - python -m pip install pyinstaller
   script:
-    - pip install --editable .
+    - python -m pip install --editable .
     - pyinstaller pyinstaller/windows.spec
   artifacts:
     expire_in: 1 day
@@ -60,10 +56,8 @@ test:twine:
     - build:wheel
   image: python:latest
   before_script:
-    - pip install virtualenv
-    - virtualenv .venv
-    - source .venv/bin/activate
-    - pip install twine
+    - python -m venv .venv
+    - python -m pip install twine
   script:
     - twine check dist/*
 
@@ -75,10 +69,8 @@ test:pypi:
     - build:wheel
   image: python:latest
   before_script:
-    - pip install virtualenv
-    - virtualenv .venv
-    - source .venv/bin/activate
-    - pip install twine
+    - python -m venv .venv
+    - python -m pip install twine
   variables:
     TWINE_PASSWORD: "$TESTPYPI_TOKEN"
     TWINE_REPOSITORY: "testpypi"
@@ -95,10 +87,8 @@ publish:pypi:
     - test:pypi
   image: python:latest
   before_script:
-    - pip install virtualenv
-    - virtualenv .venv
-    - source .venv/bin/activate
-    - pip install twine
+    - python -m venv .venv
+    - python -m pip install twine
   variables:
     TWINE_PASSWORD: "$PYPI_TOKEN"
   script:

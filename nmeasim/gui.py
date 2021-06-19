@@ -48,8 +48,8 @@ class _Control(object):
         self._var.set(value)
 
     def position(self, row):
-        self._label.grid(row=row, sticky=tk.E, column=0)
-        self._widget.grid(row=row, sticky=tk.W+tk.E, column=1)
+        self._label.grid(row=row, sticky=tk.E, column=0, padx=5)
+        self._widget.grid(row=row, sticky=tk.W+tk.E, column=1, padx=5)
 
     def disable(self):
         self._widget.configure(state=tk.DISABLED)
@@ -142,6 +142,13 @@ class _Tab(object):
             current_row += 1
 
 
+class Separator(ttk.Separator):
+    def position(self, row):
+        self.grid(
+            row=row, column=0, columnspan=2,
+            sticky="ew", padx=5, pady=10)
+
+
 class Interface(object):
 
     def _add_text_box(
@@ -158,6 +165,11 @@ class Interface(object):
             self, tab, name, label, options, tk_var_type=tk.StringVar):
         self._controls[name] = self._tabs[tab].add(_ListBox(
             self._tabs[tab].widget, name, label, options, tk_var_type))
+
+    def _add_separator(self, tab):
+        self._tabs[tab].add(
+            Separator(self._tabs[tab].widget)
+        )
 
     def _add_tab(self, name, label):
         self._tabs[name] = _Tab(self._notebook, name, label)
@@ -197,6 +209,9 @@ class Interface(object):
             "simulation", "baudrate", "Baud rate",
             _NmeaSerialInfo.baudrates(),
             tk.IntVar)
+
+        self._add_separator("simulation")
+
         self._add_check_box("simulation", "static", "Static output")
         self._add_text_box(
             "simulation", "interval", "Update interval (s)", tk.DoubleVar)
@@ -208,8 +223,18 @@ class Interface(object):
             "Simulated heading variation (deg)",
             tk.DoubleVar,
             optional=True)
+
+        self._add_text_box(
+            "simulation", "target_lat", "Target latitude (deg)", tk.DoubleVar,
+            optional=True)
+        self._add_text_box(
+            "simulation", "target_lon", "Target longitude (deg)", tk.DoubleVar,
+            optional=True)
+
         self._add_check_box(
             "simulation", "has_rtc", "Simulate independent RTC")
+
+        self._add_separator("simulation")
 
         self._add_list_box(
             "simulation", "time_dp", "Time precision (d.p.)",
@@ -238,6 +263,9 @@ class Interface(object):
 
         self._add_text_box(
             "gnss", "output", "Formats (ordered)")
+
+        self._add_separator("gnss")
+
         self._add_list_box(
             "gnss", "fix", "Fix type",
             self._sim.gps.fix.nice_names())
@@ -257,6 +285,8 @@ class Interface(object):
             "gnss", "last_dgps", "Time since DGPS update (s)", tk.DoubleVar,
             optional=True)
 
+        self._add_separator("gnss")
+
         self._add_text_box(
             "gnss", "date_time", "Initial ISO 8601 date/time/offset",
             optional=True)
@@ -274,6 +304,8 @@ class Interface(object):
             "gnss", "geoid_sep", "Geoid separation (m)", tk.DoubleVar,
             optional=True)
 
+        self._add_separator("gnss")
+
         self._add_text_box(
             "gnss", "kph", "Speed (km/hr)", tk.DoubleVar,
             optional=True)
@@ -286,6 +318,8 @@ class Interface(object):
         self._add_text_box(
             "gnss", "mag_var", "Magnetic variation (deg)", tk.DoubleVar,
             optional=True)
+
+        self._add_separator("gnss")
 
         self._add_text_box(
             "gnss", "hdop", "HDOP", tk.DoubleVar,
@@ -324,6 +358,10 @@ class Interface(object):
             self._controls['step'].value = self._sim.step
             self._controls['heading_variation'].value = \
                 self._sim.heading_variation
+            self._controls['target_lat'].value = \
+                self._sim.target[0] if self._sim.target else None
+            self._controls['target_lon'].value = \
+                self._sim.target[1] if self._sim.target else None
 
             self._controls['fix'].value = self._sim.gps.fix.nice_name
             self._controls['solution'].value = self._sim.gps.solution.nice_name
@@ -399,6 +437,17 @@ class Interface(object):
                 self._controls["heading_variation"].value
         except tk.TclError:
             pass
+
+        self._sim.target = None
+        if self._controls["target_lat"].value is not None and \
+                self._controls["target_lon"].value is not None:
+            try:
+                self._sim.target = (
+                    self._controls["target_lat"].value,
+                    self._controls["target_lon"].value
+                )
+            except tk.TclError:
+                pass
 
         self._convert_param(
             "output", self._format_converter)

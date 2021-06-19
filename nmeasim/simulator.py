@@ -29,6 +29,7 @@ class Simulator(object):
             self.gnss.append(glonass)
         self.heading_variation = heading_variation
         self.static = static
+        self.target = None
         self.interval = 1.0
         self.step = 1.0
         self.comport = serial.Serial()
@@ -44,6 +45,10 @@ class Simulator(object):
         if self.static:
             return
 
+        target_heading = None
+        rand_heading = (random() - 0.5) * self.heading_variation
+        duration_hrs = duration / 3600.0
+
         for gnss in self.gnss:
             if gnss.date_time is not None and (
                     gnss.num_sats > 0 or gnss.has_rtc):
@@ -57,8 +62,19 @@ class Simulator(object):
 
             if gnss.has_fix:
                 if self.heading_variation and gnss.heading is not None:
-                    gnss.heading += (random() - 0.5) * \
-                        self.heading_variation
+                    if target_heading is None:
+                        if self.target:
+                            lat, lon = self.target
+                            km_to_go, heading = gnss.course(lat, lon)
+
+                            if km_to_go < duration_hrs * gnss.kph:
+                                target_heading = heading
+                                gnss.kph = km_to_go / duration_hrs
+                            else:
+                                target_heading = heading + rand_heading
+                        else:
+                            target_heading = gnss.heading + rand_heading
+                    gnss.heading = target_heading
                 gnss.move(duration)
 
     def __action(self):

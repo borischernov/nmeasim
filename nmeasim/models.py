@@ -706,6 +706,14 @@ class GnssReceiver(object):
         out = Geodesic.WGS84.Inverse(self.lat, self.lon, other_lat, other_lon)
         return out["s12"] / 1000.0
 
+    def course(self, other_lat, other_lon):
+        """
+        Returns the current (distance, heading) (in km, degrees)
+        between the GNSS instance and an arbitrary lat/lon coordinate.
+        """
+        out = Geodesic.WGS84.Inverse(self.lat, self.lon, other_lat, other_lon)
+        return out["s12"] / 1000.0, out["azi1"]
+
     def get_output(self):
         """
         Returns a list of NMEA sentences (not new line terminated) that

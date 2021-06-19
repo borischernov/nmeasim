@@ -21,6 +21,7 @@ Also included is `nmea.gui`, a Tk GUI that supports serial output to emulate a s
 Features:
 
 - Static / constant velocity / random walk iteration
+- Optionally set a target location to route to
 - Custom update interval and simulation speed
 - Option to simulate independent RTC (time with no fix)
 - Custom precision all all measurements

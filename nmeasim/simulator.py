@@ -127,7 +127,7 @@ class Simulator(object):
         self.__worker.start()
         if blocking:
             try:
-                while True:
+                while self.__worker.is_alive():
                     self.__worker.join(60)
             except:
                 self.kill()

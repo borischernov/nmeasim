@@ -2,16 +2,9 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from tkinter.font import Font
 from collections import OrderedDict
-from . import models
-from .constants import FixType, SolutionMode
 from .simulator import Simulator
-import glob
-import re
 from datetime import datetime
-import time
-import serial
 import sys
-import os
 from serial.tools import list_ports
 from serial import Serial
 from importlib.metadata import version
@@ -174,7 +167,14 @@ class Interface(object):
     def _add_tab(self, name, label):
         self._tabs[name] = _Tab(self._notebook, name, label)
 
+    def write(self, output):
+        sys.stdout.write(output)
+        if self.comport.is_open:
+            self.comport.write(output.encode())
+
     def __init__(self):
+        self.comport = Serial()
+        self.comport.baudrate = 4800
         self._sim = Simulator()
         self._sim.gps.kph = 10.0
         self._root = tk.Tk()
@@ -351,7 +351,7 @@ class Interface(object):
 
     def update(self):
         with self._sim.lock:
-            self._controls['baudrate'].value = self._sim.comport.baudrate
+            self._controls['baudrate'].value = self.comport.baudrate
             self._controls['output'].value = ", ".join(self._sim.gps.output)
             self._controls['static'].value = self._sim.static
             self._controls['interval'].value = self._sim.interval
@@ -482,7 +482,7 @@ class Interface(object):
         self._convert_param("vdop")
         self._convert_param("pdop")
 
-        self._sim.comport.baudrate = self._controls["baudrate"].value
+        self.comport.baudrate = self._controls["baudrate"].value
 
         self.__start_stop_button.configure(text="Stop", command=self.stop)
         for item in self._controls.keys():
@@ -491,8 +491,14 @@ class Interface(object):
 
         # Finally start serving
         # (non-blocking as we are in an asynchronous UI thread)
+        comport = self._controls['comport'].value
+        if comport:
+            self.comport.port = comport
+            self.comport.write_timeout = 0
+            self.comport.open()
+
         self._sim.serve(
-            comport=self._controls['comport'].value,
+            output=self,
             blocking=False)
 
         # Poll the simulator to update the UI
@@ -501,7 +507,8 @@ class Interface(object):
     def stop(self):
         if self._sim.is_running():
             self._sim.kill()
-
+        if self.comport.is_open:
+            self.comport.close()
         self.update()
         for control in self._controls.values():
             control.enable()

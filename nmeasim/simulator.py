@@ -1,24 +1,23 @@
 import datetime
 import math
-import serial
-import sys
 import threading
 import time
 from random import random
+from sys import stdout
 
 from . import models
 
 
 class Simulator(object):
     '''
-    Provides simulated NMEA output based on a models.GnssReceiver instance over serial and/or stdout.
+    Provides simulated NMEA output based on a models.GnssReceiver instance.
     Supports satellite model perturbation and random walk heading adjustment.
     '''
 
     def __init__(self, gps=None, glonass=None, static=False, heading_variation=45):
         ''' Initialise the GPS simulator instance with initial configuration.
         '''
-        self.__worker = threading.Thread(target=self.__action)
+        self.__worker = None
         self.__run = threading.Event()
         if gps is None:
             gps = models.GpsReceiver()
@@ -32,8 +31,7 @@ class Simulator(object):
         self.target = None
         self.interval = 1.0
         self.step = 1.0
-        self.comport = serial.Serial()
-        self.comport.baudrate = 4800
+        self.delimiter = '\r\n'
         self.lock = threading.Lock()
 
     def __step(self, duration=1.0):
@@ -77,27 +75,29 @@ class Simulator(object):
                     gnss.heading = target_heading
                 gnss.move(duration)
 
-    def __action(self):
-        ''' Worker thread action for the GPS simulator - outputs data to the specified serial port at 1PPS.
+    def __write(self, output, sentence, delimiter):
+        string = f'{sentence}{delimiter}'
+        try:
+            output.write(string)
+        except TypeError:
+            output.write(string.encode())
+
+    def __action(self, output, delimiter):
+        ''' Worker thread action for the GPS simulator - outputs data to the specified output at 1PPS.
         '''
         self.__run.set()
-        with self.lock:
-            if self.comport.port is not None:
-                self.comport.open()
         while self.__run.is_set():
             start = time.monotonic()
             if self.__run.is_set():
                 with self.lock:
-                    output = []
+                    sentences = []
                     for gnss in self.gnss:
-                        output += gnss.get_output()
+                        sentences += gnss.get_output()
             if self.__run.is_set():
-                for sentence in output:
+                for sentence in sentences:
                     if not self.__run.is_set():
                         break
-                    print(sentence)
-                    if self.comport.port is not None:
-                        self.comport.write(f'{sentence}\r\n'.encode())
+                    self.__write(output, sentence, delimiter)
 
             if self.__run.is_set():
                 time.sleep(0.1)  # Minimum sleep to avoid long lock ups
@@ -110,19 +110,16 @@ class Simulator(object):
                     else:
                         self.__step(self.step)
 
-        with self.lock:
-            if self.comport.port is not None:
-                self.comport.close()
-
-    def serve(self, comport, blocking=True):
-        ''' Start serving GPS simulator on the specified COM port (and stdout)
+    def serve(self, output=None, blocking=True, delimiter='\r\n'):
+        ''' Start serving GPS simulator to the file-like output (default stdout).
             and optionally blocks until an exception (e.g KeyboardInterrupt).
-          Port may be None to send to stdout only.
         '''
+        if output is None:
+            output = stdout
         self.kill()
-        with self.lock:
-            self.comport.port = comport
-        self.__worker = threading.Thread(target=self.__action)
+        self.__worker = threading.Thread(
+            target=self.__action,
+            kwargs=dict(output=output, delimiter=delimiter))
         self.__worker.daemon = True
         self.__worker.start()
         if blocking:
@@ -136,7 +133,7 @@ class Simulator(object):
         ''' Issue the kill command to the GPS simulator thread and wait for it to die.
         '''
         try:
-            while self.__worker.is_alive():
+            while self.__worker and self.__worker.is_alive():
                 self.__run.clear()
                 self.__worker.join(0.1)
         except KeyboardInterrupt:
@@ -145,10 +142,11 @@ class Simulator(object):
     def is_running(self):
         ''' Is the simulator currently running?
         '''
-        return self.__run.is_set() or self.__worker.is_alive()
+        return self.__run.is_set() or self.__worker and self.__worker.is_alive()
 
-    def generate(self, duration):
-        ''' Instantaneous generator for the GPS simulator - outputs data to stdout synchronously.
+    def get_output(self, duration):
+        ''' Instantaneous generator for the GPS simulator.
+        Yields one NMEA sentence at a time, without the EOL.
         '''
         with self.lock:
             start = self.gps.date_time
@@ -159,17 +157,25 @@ class Simulator(object):
                 for gnss in self.gnss:
                     output += gnss.get_output()
                 for sentence in output:
-                    print(sentence)
+                    yield sentence
                 self.__step(self.step)
                 now = self.gps.date_time
 
-    def output_latest(self, comport):
-        '''Ouput the latest fix to a specified COM port.
+    def generate(self, duration, output=None, delimiter='\r\n'):
+        ''' Instantaneous generator for the GPS simulator.
+        Synchronously writes data to a file-like output (stdout by default).
         '''
+        if output is None:
+            output = stdout
+        for sentence in self.get_output(duration):
+            self.__write(output, sentence, delimiter)
+
+    def output_latest(self, output=None, delimiter='\r\n'):
+        '''Ouput the latest fix to a specified file-like output (stdout by default).
+        '''
+        if output is None:
+            output = stdout
         with self.lock:
-            self.comport.port = comport
-            self.comport.open()
             for gnss in self.gnss:
                 for sentence in gnss.get_output():
-                    self.comport.write(f'{sentence}\r\n'.encode())
-            self.comport.close()
+                    self.__write(output, sentence, delimiter)

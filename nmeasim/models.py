@@ -1,10 +1,8 @@
-import collections
 from datetime import datetime, timezone
 import math
 import operator
 import random
 import sys
-import time
 
 from geographiclib.geodesic import Geodesic
 

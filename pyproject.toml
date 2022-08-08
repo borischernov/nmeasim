@@ -19,16 +19,19 @@ dynamic=["version"]
 homepage = "https://gitlab.com/nmeasim/nmeasim"
 repository = "https://gitlab.com/nmeasim/nmeasim"
 
+[project.scripts]
+nmeasim = "nmeasim.gui:main"
+
 [dependencies]
 pyserial = {}
 geographiclib = {}
 importlib.metadata = { python = "<3.8" }
-
-[dev-dependencies]
-pep517 = {}
 
 [build-system]
 requires = ["setuptools>=61.2", "wheel", "setuptools_scm[toml]>=3.4.3"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
+
+[tool.setuptools.packages.find]
+include = ["nmeasim"]

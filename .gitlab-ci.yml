@@ -15,19 +15,20 @@ stages:
   - test
   - publish
 
-build:wheel:
+build:packages:
   stage: build
   image: python:latest
   before_script:
     - git fetch --tags
     - python -m venv .venv
     - source .venv/bin/activate
+    - python -m pip install build
   script:
-    - python -m pip wheel --editable . --wheel-dir dist
+    - python -m build
   artifacts:
     expire_in: 1 day
     paths:
-      - dist/nmeasim-*.whl
+      - dist/*
 
 build:exe:
   stage: build
@@ -43,7 +44,7 @@ build:exe:
     - git fetch --tags
     - python -m pip install pyinstaller
   script:
-    - python -m pip install --editable .
+    - python -m pip install .
     - pyinstaller pyinstaller/windows.spec
   artifacts:
     expire_in: 1 day
@@ -53,7 +54,7 @@ build:exe:
 test:twine:
   stage: test
   needs:
-    - build:wheel
+    - build:packages
   image: python:latest
   before_script:
     - python -m venv .venv
@@ -66,7 +67,7 @@ test:pypi:
   only:
     - tags
   needs:
-    - build:wheel
+    - build:packages
   image: python:latest
   before_script:
     - python -m venv .venv
@@ -83,7 +84,7 @@ publish:pypi:
     - tags
   when: manual
   dependencies:
-    - build:wheel
+    - build:packages
     - test:pypi
   image: python:latest
   before_script:

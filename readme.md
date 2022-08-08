@@ -24,7 +24,7 @@ Features:
 - Optionally set a target location to route to
 - Custom update interval and simulation speed
 - Option to simulate independent RTC (time with no fix)
-- Custom precision all all measurements
+- Custom precision can be specified for all measurements
 - Custom sentence order and presence
 - Simulate fix/no-fix conditions
 - Simulate changing satellite visibility
@@ -40,6 +40,15 @@ python -m pip install nmeasim
 ```
 
 See [releases](https://gitlab.com/nmeasim/nmeasim/-/releases) for pre-built Windows GUI binaries.
+
+## Building
+
+This project uses a [`PEP 617`](https://peps.python.org/pep-0517/) / [`PEP 621`](https://peps.python.org/pep-0621/) build system, using the `setuptools` backend. A stub `setup.py` exists only to enable editable installs.
+
+The preferred (and tested) frontend is [`build`](https://pypi.org/project/build/).
+
+**Note**: If building with `python -m build --no-isolation`, the build dependencies will not be installed automatically. Instead, you will need to manually install the packages listed under `requires` in the `[build-system]` section of [`pyproject.toml`](pyproject.toml).
+
 
 ## Examples
 

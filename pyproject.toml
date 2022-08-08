@@ -2,19 +2,22 @@
 name = "nmeasim"
 description = "A Python GNSS/NMEA receiver simulation"
 authors = [
-    "Wei Li Jiang <wjiang87@gmail.com>"
+    {email = "wjiang87@gmail.com"},
+    {name = "Wei Li Jiang"}
 ]
-license = "MIT"
-python = "^3.7"
-homepage = "https://gitlab.com/nmeasim/nmeasim"
-repository = "https://gitlab.com/nmeasim/nmeasim"
-
+readme = "readme.md"
+license = {file = "nmeasim/LICENSE"}
+requires-python = ">=3.7"
 keywords = ["gnss", "glonass", "gps", "nmea", "simulator"]
-
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License"
 ]
+dynamic=["version"]
+
+[project.urls]
+homepage = "https://gitlab.com/nmeasim/nmeasim"
+repository = "https://gitlab.com/nmeasim/nmeasim"
 
 [dependencies]
 pyserial = {}
@@ -25,7 +28,7 @@ importlib.metadata = { python = "<3.8" }
 pep517 = {}
 
 [build-system]
-requires = ["setuptools>=43", "wheel", "setuptools_scm[toml]>=3.4"]
+requires = ["setuptools>=61.2", "wheel", "setuptools_scm[toml]>=3.4.3"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]

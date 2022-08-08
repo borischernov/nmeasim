@@ -189,7 +189,11 @@ class Interface(object):
             version_string = version(name)
 
         self._root.title('{} {}'.format(name, version_string))
-        self._root.iconbitmap(str(base_dir / "icon.ico"))
+        try:
+            self._root.iconbitmap(str(base_dir / "icon.ico"))
+        except tk.TclError:
+            # No nice icons on *nix
+            pass
 
         with (base_dir / "LICENSE").open() as fp:
             self._license = fp.read()

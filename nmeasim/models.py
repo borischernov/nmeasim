@@ -597,7 +597,9 @@ class GnssReceiver(object):
         # (negative elevation)
         random.shuffle(self.satellites)
         for i in range(value):
-            self.satellites[i].elevation = random.random() * 90
+            # Simulation varies elevation by +/- 0.5,
+            # so clamp base value to prevent it becoming invisible
+            self.satellites[i].elevation = random.uniform(1, 89)
         for i in range(value, len(self.satellites)):
             self.satellites[i].elevation = -90
         self.satellites.sort(key=operator.attrgetter("prn", ))

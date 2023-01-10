@@ -106,7 +106,7 @@ class _ListBox(_Control):
 
     @property
     def value(self):
-        if not self._var.get():
+        if self._var.get() == "":
             return None
         return self._var.get()
 

@@ -279,7 +279,7 @@ class GnssReceiver(object):
         for i in range(count):
             parts = [
                 "GSV",
-                f"{len(messages):d}",
+                f"{count:d}",
                 f"{i + 1:d}",
                 f"{self.num_sats:02d}"
             ]

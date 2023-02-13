@@ -16,8 +16,8 @@ classifiers = [
 dynamic=["version"]
 
 [project.urls]
-homepage = "https://gitlab.com/nmeasim/nmeasim"
-repository = "https://gitlab.com/nmeasim/nmeasim"
+homepage = "https://github.com/borischernov/nmeasim"
+repository = "https://github.com/borischernov/nmeasim"
 
 [project.scripts]
 nmeasim = "nmeasim.gui:main"

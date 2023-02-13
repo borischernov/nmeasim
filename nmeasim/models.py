@@ -369,6 +369,28 @@ class GnssReceiver(object):
 
         return [self.__format_sentence(self._prefix + ",".join(parts))]
 
+    def __hdt(self):
+        """ Generate an NMEA HDT sentence.
+        """
+        parts = [
+            "HDT",
+            self.__fmt_opt(self.__angle_spec, self.heading),
+            "T"
+        ]
+
+        return [self.__format_sentence(self._prefix + ",".join(parts))]
+
+    def __hdm(self):
+        """ Generate an NMEA HDM sentence.
+        """
+        parts = [
+            "HDM",
+            self.__fmt_opt(self.__angle_spec, self.mag_heading),
+            "M"
+        ]
+
+        return [self.__format_sentence(self._prefix + ",".join(parts))]
+
     def __init__(self,
                  min_sv_number,
                  max_sv_number,
@@ -414,6 +436,8 @@ class GnssReceiver(object):
         self.__gen_nmea['VTG'] = self.__vtg
         self.__gen_nmea['GLL'] = self.__gll
         self.__gen_nmea['ZDA'] = self.__zda
+        self.__gen_nmea['HDM'] = self.__hdm
+        self.__gen_nmea['HDT'] = self.__hdt
 
         # Record parameters
         self.solution = solution

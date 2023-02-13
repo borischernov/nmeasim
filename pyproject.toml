@@ -33,5 +33,3 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
 
-[tool.setuptools.packages.find]
-include = ["nmeasim"]
